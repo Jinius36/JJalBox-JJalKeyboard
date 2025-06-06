@@ -1,47 +1,48 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-
-    <uses-permission android:name="android.permission.VIBRATE"/>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+        package="com.myhome.rpgkeyboard">
 
     <application
             android:allowBackup="true"
-            android:icon="@drawable/logo"
             android:label="@string/app_name"
+            android:icon="@mipmap/ic_launcher"
             android:roundIcon="@mipmap/ic_launcher_round"
-            android:supportsRtl="true"
             android:theme="@style/AppTheme">
-        <activity android:name=".setting.custom.SettingCustomActivity">
-        </activity>
-        <activity android:name=".setting.SettingDetailActivity">
-        </activity>
 
-        <meta-data
-                android:name="com.google.android.gms.ads.APPLICATION_ID"
-                android:value="ca-app-pub-3136625326865731~7052493358"/>
-
+        <!-- 1) 키보드(IME) 서비스 등록: 'uses-permission' 삭제하고, service에서만 permission 지정 -->
         <service
                 android:name=".KeyBoardService"
-                android:enabled="true"
-                android:exported="true"
-                android:label="MyKeyboard"
-                android:permission="android.permission.BIND_INPUT_METHOD">
+                android:permission="android.permission.BIND_INPUT_METHOD"
+                android:exported="false">
+            <intent-filter>
+                <action android:name="android.view.InputMethod" />
+            </intent-filter>
             <meta-data
                     android:name="android.view.im"
-                    android:resource="@xml/xml"/>
-
-            <intent-filter>
-                <action android:name="android.view.InputMethod"/>
-            </intent-filter>
+                    android:resource="@xml/xml" />
         </service>
 
+        <!-- 2) FileProvider (이미지 클립보드 복사용) -->
+        <provider
+                android:name="androidx.core.content.FileProvider"
+                android:authorities="${applicationId}.provider"
+                android:exported="false"
+                android:grantUriPermissions="true">
+            <meta-data
+                    android:name="android.support.FILE_PROVIDER_PATHS"
+                    android:resource="@xml/file_paths" />
+        </provider>
+
+<!--    3) MainActivity: android:exported="true" 추가-->
         <activity
                 android:name=".MainActivity"
                 android:exported="true">
             <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-    </application>
 
+
+    </application>
 </manifest>
