@@ -1,6 +1,7 @@
 package com.myhome.rpgkeyboard
 
 import android.inputmethodservice.InputMethodService
+import android.inputmethodservice.KeyboardView
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
@@ -8,6 +9,7 @@ import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.appcompat.widget.AppCompatEditText
 import com.myhome.rpgkeyboard.R
 import com.myhome.rpgkeyboard.keyboardview.*
@@ -21,18 +23,20 @@ class KeyBoardService : InputMethodService(){
     lateinit var keyboardSimbols:KeyboardSimbols
     var isQwerty = 0 // shared preference에 데이터를 저장하고 불러오는 기능 필요
 
-    // --- 플로팅 바(UI) 관련 ---
-    private var floatingSearchBar: View? = null
-    private lateinit var etSearch: AppCompatEditText
-    private lateinit var btnSearchIcon: ImageButton
-
-    // 검색 모드 토글 플래그
+    // === 검색 UI용 필드 추가 ===
+    private lateinit var searchContainer: View
+    private lateinit var btnJjalSearch: Button
+    private lateinit var tvSearchQuery: TextView
+    private lateinit var btnClear: ImageButton
+    private lateinit var btnSearch: ImageButton
     private var isSearchMode = false
+    private val queryBuilder = StringBuilder()
 
 
 
     val keyboardInterationListener = object:KeyboardInterationListener{
         //inputconnection이 null일경우 재요청하는 부분 필요함
+
         override fun modechange(mode: Int) {
             currentInputConnection.finishComposingText()
             when(mode){
@@ -67,14 +71,36 @@ class KeyBoardService : InputMethodService(){
 
     override fun onCreate() {
         super.onCreate()
+
+        // 1) 전체 키보드 레이아웃 inflate
         keyboardView = layoutInflater.inflate(R.layout.keyboard_view, null) as LinearLayout
         keyboardFrame = keyboardView.findViewById(R.id.keyboard_frame)
 
-        val btnJjalSearch = keyboardView.findViewById<Button>(R.id.btnJjalSearch)  // oard_view.xml](file-service://file-Sxu91psH9kNGwWeTHcfn8t)
+        // 2) 검색 컨테이너(ViewGroup)를 findViewById로 가져와 숨김 처리
+        searchContainer = keyboardView.findViewById(R.id.search_container)
+        searchContainer.visibility = View.GONE
+
+        // 3) 검색 컨테이너 내부의 뷰 바인딩
+        tvSearchQuery = searchContainer.findViewById(R.id.tv_search_query)
+        btnClear      = searchContainer.findViewById(R.id.btn_clear)
+        btnSearch     = searchContainer.findViewById(R.id.btn_search)
+
+        // 4) 삭제 버튼 클릭 시 텍스트 지우기
+        btnClear.setOnClickListener {
+            queryBuilder.setLength(0)
+            tvSearchQuery.text = ""
+        }
+        // 5) 검색 버튼 클릭 시 performSearch 호출
+        btnSearch.setOnClickListener {
+            performSearch(queryBuilder.toString())
+        }
+
+        // 6) “짤 검색!” 토글 버튼 바인딩
+        btnJjalSearch = keyboardView.findViewById(R.id.btnJjalSearch)
         btnJjalSearch.setOnClickListener {
+            // 검색 모드 토글
             isSearchMode = !isSearchMode
-            // 키보드 전체를 갱신하도록 강제 호출
-            updateInputViewShown()
+            updateSearchUI()
         }
     }
 
@@ -89,71 +115,31 @@ class KeyBoardService : InputMethodService(){
         keyboardSimbols.inputConnection = currentInputConnection
         keyboardSimbols.init()
 
-
-        // 2) floatingSearchBar 한 번만 inflate → 붙이기
-        if (floatingSearchBar == null) {
-            floatingSearchBar = layoutInflater.inflate(
-                R.layout.jjal_search_bar, keyboardView, false
-            )
-            // 최상단에 붙이고 숨김
-            (keyboardView as ViewGroup).addView(floatingSearchBar, 0)
-            floatingSearchBar!!.visibility = View.GONE
-        }
-        // floatingSearchBar inflate 이후
-        etSearch = floatingSearchBar!!.findViewById(R.id.et_search)
-        btnSearchIcon = floatingSearchBar!!.findViewById(R.id.btn_search)
-
-        // IME 액션(Search) 설정
-        etSearch.imeOptions = EditorInfo.IME_ACTION_SEARCH
-        etSearch.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_SEARCH) {
-                val query = etSearch.text.toString().trim()
-                onSearchStub(query)
-                true
-            } else false
-        }
-
-// 돋보기 버튼 클릭 리스너
-        btnSearchIcon.setOnClickListener {
-            val query = etSearch.text.toString().trim()
-            onSearchStub(query)
-        }
-
-
+        keyboardInterationListener.modechange(1)
 
         return keyboardView
     }
-
-    /** 실제 검색 로직은 나중에 여기에 구현하세요 */
-    private fun onSearchStub(query: String) {
-        // TODO: 서버 호출하거나 클립보드 복사 등
-    }
-
     override fun updateInputViewShown() {
         super.updateInputViewShown()
         currentInputConnection.finishComposingText()
+        updateSearchUI()
+    }
+
+    private fun updateSearchUI() {
         if (isSearchMode) {
-            // 검색 모드: 검색 바만 보이게
-            floatingSearchBar?.visibility = View.VISIBLE
-            keyboardFrame.visibility = View.VISIBLE
+            searchContainer.visibility = View.VISIBLE
+            queryBuilder.setLength(0)
+            tvSearchQuery.text = ""
         } else {
-            // 일반 모드: 기존 숫자 vs 문자 모드 분기
-            if (currentInputEditorInfo.inputType == EditorInfo.TYPE_CLASS_NUMBER) {
-                keyboardFrame.removeAllViews()
-                keyboardFrame.addView(
-                    KeyboardNumpad.newInstance(
-                        applicationContext,
-                        layoutInflater,
-                        currentInputConnection,
-                        keyboardInterationListener
-                    )
-                )
-            } else {
-                keyboardInterationListener.modechange(1)
-            }
-            floatingSearchBar?.visibility = View.GONE
+            searchContainer.visibility = View.GONE
             keyboardFrame.visibility = View.VISIBLE
         }
     }
 
+    private fun performSearch(query: String) {
+        if (query.isBlank()) return
+        // TODO: 검색 로직
+        isSearchMode = false
+        updateSearchUI()
+    }
 }
