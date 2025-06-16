@@ -4,6 +4,13 @@
               android:layout_width="match_parent"
               android:layout_height="match_parent"
               android:background="@color/keyboardBackground">
+    <!-- keyboard_view.xml -->
+    <Button
+            android:id="@+id/btnJjalSearch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="짤 검색!" />
+
     <FrameLayout
             android:id="@+id/keyboard_frame"
             android:layout_width="match_parent"

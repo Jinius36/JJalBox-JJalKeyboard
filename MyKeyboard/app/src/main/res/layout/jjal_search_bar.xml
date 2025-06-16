@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+        android:id="@+id/search_bar_root"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:orientation="horizontal"
+        android:padding="4dp"
+        android:background="@android:color/white">
+
+    <!-- 검색어 입력 가능 EditText -->
+    <androidx.appcompat.widget.AppCompatEditText
+            android:id="@+id/et_search"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center_vertical"
+            android:padding="8dp"
+            android:textColor="#000"
+            android:hint="어떤 짤을 찾아볼까요?"
+            android:background="@drawable/shape_search_edit" />
+
+    <!-- 검색 실행 버튼 -->
+    <ImageButton
+            android:id="@+id/btn_search"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_marginStart="4dp"
+            android:src="@drawable/ic_search_24dp"
+            android:background="@drawable/shape_search_button"
+            android:contentDescription="검색"
+            android:padding="8dp" />
+</LinearLayout>
