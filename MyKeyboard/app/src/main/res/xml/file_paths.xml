@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- cacheDir/images/ 폴더를 FileProvider에서 엑세스할 수 있도록 지정 -->
-    <cache-path
-            name="images"
-            path="images/" />
-</paths>

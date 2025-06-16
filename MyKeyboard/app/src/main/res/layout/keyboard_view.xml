@@ -1,102 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-        android:id="@+id/keyboard_root"
-        android:orientation="vertical"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="@color/keyboardBackground"
-        android:padding="4dp">
-
-    <!-- ──────────────────────────────────────────────────────────────────── -->
-    <!-- 1) 최상단: 검색창(EditText) + 검색/닫기( ImageView ) 버튼 -->
-    <LinearLayout
-            android:id="@+id/searchBarLayout"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:background="#F5F5F5"
-            android:padding="8dp">
-
-        <EditText
-                android:id="@+id/searchInput"
-                android:layout_width="0dp"
-                android:layout_weight="1"
-                android:layout_height="40dp"
-                android:hint="검색어 입력"
-                android:imeOptions="actionSearch"
-                android:inputType="text"
-                android:background="@drawable/search_edittext_bg"
-                android:padding="8dp"
-                android:maxLines="1" />
-
-        <ImageView
-                android:id="@+id/searchButton"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:layout_marginStart="8dp"
-                android:padding="8dp"
-                android:src="@android:drawable/ic_menu_search"
-                android:contentDescription="@string/search_button_desc" />
-    </LinearLayout>
-
-    <!-- ──────────────────────────────────────────────────────────────────── -->
-    <!-- 2) 즐겨찾기/최근검색어 리스트 영역
-         (검색 모드 진입 시 VISIBLE, 기본은 GONE) -->
-    <LinearLayout
-            android:id="@+id/listContainer"
-            android:orientation="vertical"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:padding="8dp"
-            android:visibility="gone">
-
-        <!-- 즐겨찾기 라벨 -->
-        <TextView
-                android:id="@+id/tv_favorites_label"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="즐겨찾기"
-                android:textStyle="bold"
-                android:paddingBottom="4dp" />
-
-        <!-- 즐겨찾기 RecyclerView (가로 스크롤) -->
-        <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/rvFavorites"
-                android:layout_width="match_parent"
-                android:layout_height="80dp"
-                android:overScrollMode="never"
-                android:background="#EEEEEE" />
-
-        <!-- 최근검색어 라벨 -->
-        <TextView
-                android:id="@+id/tv_history_label"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="최근 검색어"
-                android:textStyle="bold"
-                android:paddingTop="8dp"
-                android:paddingBottom="4dp" />
-
-        <!-- 최근검색어 RecyclerView (세로 스크롤) -->
-        <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/rvHistory"
-                android:layout_width="match_parent"
-                android:layout_height="100dp"
-                android:overScrollMode="never"
-                android:background="#EEEEEE" />
-
-    </LinearLayout>
-
-    <!-- ──────────────────────────────────────────────────────────────────── -->
-    <!-- 3) 기존 키보드 프레임: 실제 키보드 뷰가 이 영역에 동적으로 추가됩니다. -->
+              android:orientation="vertical"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:background="@color/keyboardBackground">
     <FrameLayout
             android:id="@+id/keyboard_frame"
             android:layout_width="match_parent"
             android:layout_height="wrap_content">
-        <!--
-            원래 이곳에 KeyboardKorean, KeyboardEnglish, KeyboardSimbols 등
-            각 모드를 inflate/attach 하던 코드를 유지합니다.
-        -->
+
     </FrameLayout>
 
 </LinearLayout>

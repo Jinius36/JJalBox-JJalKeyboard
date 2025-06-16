@@ -1,5 +1,3 @@
 <resources>
     <string name="app_name">MyKeyboard</string>
-    <!-- 검색 버튼 ContentDescription -->
-    <string name="search_button_desc">검색 버튼</string>
 </resources>
