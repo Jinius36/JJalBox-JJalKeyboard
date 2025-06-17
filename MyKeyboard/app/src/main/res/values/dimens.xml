@@ -1,0 +1,4 @@
+<!-- res/values/dimens.xml -->
+<resources>
+    <dimen name="default_keyboard_height">250dp</dimen>
+</resources>

@@ -1,5 +1,6 @@
 package com.myhome.rpgkeyboard
 
+import android.content.Intent
 import android.inputmethodservice.InputMethodService
 import android.inputmethodservice.KeyboardView
 import android.view.View
@@ -10,6 +11,7 @@ import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.view.KeyEvent  // KEYCODE_DEL 사용을 위해
 import androidx.appcompat.widget.AppCompatEditText
 import com.myhome.rpgkeyboard.R
 import com.myhome.rpgkeyboard.keyboardview.*
@@ -33,9 +35,34 @@ class KeyBoardService : InputMethodService(){
     private val queryBuilder = StringBuilder()
 
 
-
     val keyboardInterationListener = object:KeyboardInterationListener{
         //inputconnection이 null일경우 재요청하는 부분 필요함
+
+        // ─── 이 부분을 추가 ───────────────────────────────────────────────
+        override fun onKey(primaryCode: Int, keyCodes: IntArray) {
+            if (isSearchMode) {
+                // 삭제키 처리
+                if (primaryCode == KeyEvent.KEYCODE_DEL) {
+                    if (queryBuilder.isNotEmpty()) {
+                        queryBuilder.setLength(queryBuilder.length - 1)
+                        tvSearchQuery.text = queryBuilder.toString()
+                    }
+                }
+                // 일반 문자 입력 처리
+                else {
+                    val ch = primaryCode.toChar().toString()
+                    queryBuilder.append(ch)
+                    tvSearchQuery.text = queryBuilder.toString()
+                }
+            } else {
+                // 일반 모드: 기존 로직 유지
+                if (primaryCode == KeyEvent.KEYCODE_DEL) {
+                    currentInputConnection.deleteSurroundingText(1, 0)
+                } else {
+                    currentInputConnection.commitText(primaryCode.toChar().toString(), 1)
+                }
+            }
+        }
 
         override fun modechange(mode: Int) {
             currentInputConnection.finishComposingText()
@@ -97,10 +124,20 @@ class KeyBoardService : InputMethodService(){
 
         // 6) “짤 검색!” 토글 버튼 바인딩
         btnJjalSearch = keyboardView.findViewById(R.id.btnJjalSearch)
+        // KeyBoardService.kt
+
         btnJjalSearch.setOnClickListener {
-            // 검색 모드 토글
-            isSearchMode = !isSearchMode
-            updateSearchUI()
+            // 1) 검색 Activity 호출 준비
+            val intent = Intent(this, SearchActivity::class.java)
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+            // 2) 현재 keyboardFrame 높이를 측정해서 넘겨준다
+            //    (레이아웃이 아직 그려지지 않았을 수도 있으니 post() 사용)
+            keyboardFrame.post {
+                val h = keyboardFrame.height
+                intent.putExtra("keyboard_height", h)
+                startActivity(intent)
+            }
         }
     }
 
@@ -141,5 +178,16 @@ class KeyBoardService : InputMethodService(){
         // TODO: 검색 로직
         isSearchMode = false
         updateSearchUI()
+    }
+
+    override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
+        super.onStartInputView(info, restarting)
+        // 검색 모드에서 돌아왔다면 검색 모드 해제
+        isSearchMode = false
+        // 기본 모드(한국어)를 강제로 붙여 줍니다
+        keyboardInterationListener.modechange(1)
+        // 검색 컨테이너가 떠 있을 수도 있으니 숨깁니다
+        keyboardFrame.visibility = View.VISIBLE
+        searchContainer.visibility = View.GONE
     }
 }
