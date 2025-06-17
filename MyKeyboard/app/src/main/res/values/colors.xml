@@ -4,6 +4,12 @@
     <color name="colorPrimaryDark">#00574B</color>
     <color name="colorAccent">#D81B60</color>
 
+    <!-- 선택된 메뉴 텍스트 색상: 머티리얼 블루 500 -->
+    <color name="blue_500">#2196F3</color>
+
+    <!-- 기본 메뉴 텍스트 색상: 다크 그레이 계열 -->
+    <color name="text_primary">#212121</color>
+
     <color name="keyboardBoarder">#ddd</color>
     <color name="keyboardBackground">#eee</color>
     <color name="keyboardDivider">#fff</color>
