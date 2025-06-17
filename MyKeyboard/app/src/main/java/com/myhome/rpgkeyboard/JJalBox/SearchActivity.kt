@@ -1,11 +1,11 @@
-package com.myhome.rpgkeyboard
+package com.myhome.rpgkeyboard.JJalBox
 
 import android.app.Activity
-import android.content.Intent
 import android.os.Bundle
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.ImageButton
+import com.myhome.rpgkeyboard.R
 
 class SearchActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {

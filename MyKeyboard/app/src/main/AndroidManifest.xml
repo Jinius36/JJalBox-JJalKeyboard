@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.VIBRATE"/>
+    <uses-permission android:name="android.permission.INTERNET" />
+
 
     <application
             android:allowBackup="true"
@@ -43,7 +45,7 @@
             </intent-filter>
         </activity>
         <activity
-                android:name=".SearchActivity"
+                android:name=".JJalBox.SearchActivity"
                 android:exported="false"
                 android:windowSoftInputMode="stateVisible|adjustResize"/>
 
