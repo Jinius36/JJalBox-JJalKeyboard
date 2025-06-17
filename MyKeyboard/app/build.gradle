@@ -51,6 +51,7 @@ dependencies {
 
     // Glide (정확한 버전)
     implementation 'com.github.bumptech.glide:glide:4.16.0'
+    implementation 'androidx.cardview:cardview:1.0.0'
     kapt 'com.github.bumptech.glide:compiler:4.16.0'
 
     // RetrofitClient 관련 (이미 있음)

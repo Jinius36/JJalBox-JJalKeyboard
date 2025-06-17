@@ -2,6 +2,7 @@ package com.myhome.rpgkeyboard
 
 import android.inputmethodservice.InputMethodService
 import android.view.View
+import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.FrameLayout
@@ -32,6 +33,7 @@ class KeyBoardService : InputMethodService() {
                     keyboardEnglish.inputConnection = currentInputConnection
                     keyboardFrame.addView(keyboardEnglish.getLayout())
                 }
+
                 1 -> {
                     if (isQwerty == 0) {
                         keyboardFrame.removeAllViews()
@@ -49,11 +51,13 @@ class KeyBoardService : InputMethodService() {
                         )
                     }
                 }
+
                 2 -> {
                     keyboardFrame.removeAllViews()
                     keyboardSimbols.inputConnection = currentInputConnection
                     keyboardFrame.addView(keyboardSimbols.getLayout())
                 }
+
                 3 -> {
                     keyboardFrame.removeAllViews()
                     keyboardFrame.addView(
@@ -75,15 +79,11 @@ class KeyBoardService : InputMethodService() {
         keyboardView = layoutInflater.inflate(R.layout.keyboard_view, null) as LinearLayout
         keyboardFrame = keyboardView.findViewById(R.id.keyboard_frame)
 
-        // 2) JJalSearch 인스턴스 미리 생성 (onSearch 콜백은 실제 검색 로직으로 대체)
+        // JJalSearch 생성만, 아직 붙이지 않습니다.
         jjalSearch = JJalSearch(this, layoutInflater) { query ->
-            // TODO: query를 백엔드에 넘기거나 클립보드 복사 등
-            // 검색 완료 후 원래 키보드로 복귀
+            // TODO: 검색 처리 후 키보드 복귀
             hideJjalSearch()
         }
-        // 뷰 계층에 미리 추가해 두고 숨겨둡니다
-        keyboardView.addView(jjalSearch.view)
-        jjalSearch.view.visibility = View.GONE
 
         // 3) “짤 검색!” 버튼 바인딩
         btnJjalSearch = keyboardView.findViewById(R.id.btnJjalSearch)
@@ -95,9 +95,12 @@ class KeyBoardService : InputMethodService() {
 
     override fun onCreateInputView(): View {
         // 4) 기존 키보드 모듈 초기화 (절대 건드리지 않기)
-        keyboardKorean = KeyboardKorean(applicationContext, layoutInflater, keyboardInterationListener)
-        keyboardEnglish = KeyboardEnglish(applicationContext, layoutInflater, keyboardInterationListener)
-        keyboardSimbols = KeyboardSimbols(applicationContext, layoutInflater, keyboardInterationListener)
+        keyboardKorean =
+            KeyboardKorean(applicationContext, layoutInflater, keyboardInterationListener)
+        keyboardEnglish =
+            KeyboardEnglish(applicationContext, layoutInflater, keyboardInterationListener)
+        keyboardSimbols =
+            KeyboardSimbols(applicationContext, layoutInflater, keyboardInterationListener)
 
         keyboardKorean.inputConnection = currentInputConnection
         keyboardKorean.init()
@@ -133,22 +136,28 @@ class KeyBoardService : InputMethodService() {
         hideJjalSearch()
     }
 
-    /** 짤 검색 UI 보여 주기 */
     private fun showJjalSearch() {
-        // 1) 기존 키보드 숨기기
-        keyboardFrame.visibility = View.GONE
-        // 2) JJalSearch 뷰 보이기
-        jjalSearch.view.visibility = View.VISIBLE
         isJjalSearchVisible = true
+
+        // 1) 프레임 비우기
+        keyboardFrame.removeAllViews()
+
+        // 2) MATCH_PARENT x MATCH_PARENT 로 덮기
+        val lp = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT
+        )
+        keyboardFrame.addView(jjalSearch.view, lp)
     }
 
     /** 짤 검색 UI 숨기고 키보드 복귀 */
     private fun hideJjalSearch() {
-        jjalSearch.view.visibility = View.GONE
-        // 기존 키보드 다시 보이기
-        keyboardFrame.visibility = View.VISIBLE
-        // 한국어 모드 재설정
-        keyboardInterationListener.modechange(1)
         isJjalSearchVisible = false
+
+        // 1) jjalSearch.view 제거
+        keyboardFrame.removeAllViews()
+
+        // 2) 기존 키보드 모드(한글) 다시 붙이기
+        keyboardInterationListener.modechange(1)
     }
 }
