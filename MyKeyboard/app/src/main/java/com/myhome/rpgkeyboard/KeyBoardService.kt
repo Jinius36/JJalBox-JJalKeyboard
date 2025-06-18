@@ -1,5 +1,7 @@
 package com.myhome.rpgkeyboard
 
+import android.annotation.SuppressLint
+import android.content.BroadcastReceiver
 import android.inputmethodservice.InputMethodService
 import android.view.View
 import android.view.ViewGroup
@@ -8,6 +10,17 @@ import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import com.myhome.rpgkeyboard.keyboardview.*
+
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import com.myhome.rpgkeyboard.JJalBox.SearchActivity
+import androidx.core.content.ContextCompat
+
+
 
 class KeyBoardService : InputMethodService() {
     // 기존 변수들 (절대 지우지 마세요)
@@ -18,10 +31,12 @@ class KeyBoardService : InputMethodService() {
     private lateinit var keyboardSimbols: KeyboardSimbols
     var isQwerty = 0
 
-    // ✨ 새로 추가된 변수
     private lateinit var btnJjalSearch: Button
     private lateinit var jjalSearch: JJalSearch
     private var isJjalSearchVisible = false
+
+    // SearchActivity에 BroadCast 보내는 용도
+    private lateinit var searchUiReceiver: BroadcastReceiver
 
     // 기존 listener (순수히 modechange만 담당)
     val keyboardInterationListener = object : KeyboardInterationListener {
@@ -79,6 +94,26 @@ class KeyBoardService : InputMethodService() {
         keyboardView = layoutInflater.inflate(R.layout.keyboard_view, null) as LinearLayout
         keyboardFrame = keyboardView.findViewById(R.id.keyboard_frame)
 
+        searchUiReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent) {
+                val show = intent.getBooleanExtra(
+                    SearchActivity.EXTRA_IS_VISIBLE, true
+                )
+                Handler(Looper.getMainLooper()).post {
+                    btnJjalSearch.visibility =
+                        if (show) View.VISIBLE else View.GONE
+                }
+            }
+        }
+
+        val filter = IntentFilter(SearchActivity.ACTION_SEARCH_UI)
+        ContextCompat.registerReceiver(
+            /* context = */ this,
+            /* receiver = */ searchUiReceiver,
+            /* filter = */ filter,
+            /* flags = */ ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+
         // JJalSearch 생성만, 아직 붙이지 않습니다.
         jjalSearch = JJalSearch(this, layoutInflater) { query ->
             // TODO: 검색 처리 후 키보드 복귀
@@ -91,6 +126,11 @@ class KeyBoardService : InputMethodService() {
             if (isJjalSearchVisible) hideJjalSearch()
             else showJjalSearch()
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        unregisterReceiver(searchUiReceiver)
     }
 
     override fun onCreateInputView(): View {
@@ -137,10 +177,10 @@ class KeyBoardService : InputMethodService() {
     }
 
     private fun showJjalSearch() {
-        isJjalSearchVisible = true
-
         // 1) 프레임 비우기
         keyboardFrame.removeAllViews()
+
+        isJjalSearchVisible = true
 
         // 2) MATCH_PARENT x MATCH_PARENT 로 덮기
         val lp = FrameLayout.LayoutParams(

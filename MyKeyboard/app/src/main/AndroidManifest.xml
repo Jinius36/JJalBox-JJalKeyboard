@@ -49,7 +49,6 @@
                 android:name=".JJalBox.SearchActivity"
                 android:exported="false"
                 android:windowSoftInputMode="stateVisible|adjustResize"/>
-
     </application>
 
 </manifest>
