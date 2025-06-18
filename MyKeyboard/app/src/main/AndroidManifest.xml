@@ -51,7 +51,11 @@
         <activity
                 android:name=".JJalBox.SearchActivity"
                 android:exported="false"
-                android:windowSoftInputMode="stateVisible|adjustResize"/>
+                android:noHistory="true"
+                android:excludeFromRecents="true"
+                android:taskAffinity=""
+                android:windowSoftInputMode="stateVisible|adjustResize"
+                android:theme="@style/Theme.AppCompat.Light.NoActionBar"/>
     </application>
 
 </manifest>

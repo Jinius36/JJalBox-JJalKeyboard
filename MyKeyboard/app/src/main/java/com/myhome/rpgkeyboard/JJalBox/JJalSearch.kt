@@ -64,9 +64,13 @@ class JJalSearch(
                 when (pos) {
                     0 -> {
                         // 검색 버튼: SearchActivity 실행
-                        Intent(context, SearchActivity::class.java).apply {
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                        }.also(context::startActivity)
+                        // JJalSearch 의 onBindViewHolder 안(검색 아이콘 클릭 시)
+                        val intent = Intent(context, SearchActivity::class.java).apply {
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                                Intent.FLAG_ACTIVITY_NO_HISTORY or // 히스토리에 남기지 않음
+                                Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS // 최근 앱 목록에 안 보이도록
+                        }
+                        context.startActivity(intent)
                     }
                     1 -> loadImagesFor("최신")
                     else -> loadImagesFor(item)

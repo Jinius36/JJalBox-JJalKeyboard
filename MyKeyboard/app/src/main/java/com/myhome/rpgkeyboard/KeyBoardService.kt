@@ -8,6 +8,7 @@ import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.FrameLayout.LayoutParams
 import android.widget.LinearLayout
 import com.myhome.rpgkeyboard.keyboardview.*
 
@@ -34,6 +35,7 @@ class KeyBoardService : InputMethodService() {
     private lateinit var btnJjalSearch: Button
     private lateinit var jjalSearch: JJalSearch
     private var isJjalSearchVisible = false
+    private var isSearchActivityOpen   = false
 
     // SearchActivity에 BroadCast 보내는 용도
     private lateinit var searchUiReceiver: BroadcastReceiver
@@ -105,37 +107,29 @@ class KeyBoardService : InputMethodService() {
             // 검색 후 바로 커밋만, UI 토글은 브로드캐스트로 처리
         }
 
-        // 4) 브로드캐스트 리시버 등록
+        // 브로드캐스트 리시버 등록 (QUERY+VISIBLE 한번에 처리)
         searchUiReceiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context?, intent: Intent?) {
-                // 항상 UI 쓰레드에서 작동하도록
-                Handler(Looper.getMainLooper()).post {
-                    val isVisible = intent?.getBooleanExtra(
-                        SearchActivity.EXTRA_IS_VISIBLE, true
-                    ) ?: true
+                val showActivity = intent
+                    ?.getBooleanExtra(SearchActivity.EXTRA_IS_VISIBLE, true) ?: true
+                val query = intent?.getStringExtra(SearchActivity.EXTRA_QUERY)
 
-                    // SearchActivity 에서 EXTRA_QUERY 도 함께 보낼 때
-                    val query = intent?.getStringExtra(SearchActivity.EXTRA_QUERY)
+                // 1) SearchActivity 열리고 닫히는 신호 토글
+                isSearchActivityOpen = !showActivity
+                // 버튼 표시/숨김
+                btnJjalSearch.visibility =
+                    if (showActivity) View.VISIBLE else View.GONE
 
-                    if (query != null) {
-                        // “검색 완료 → 키보드로 복귀” 흐름
-                        showJjalSearch()
-                        jjalSearch.loadImagesFor(query)
-                        jjalSearch.selectMenuPosition(0)
-
-                        // 버튼 자체는 항상 숨긴 상태였으니, 다시 보여줄 필요 없습니다
-                    }
-                    else {
-                        // SearchActivity 실행 중(toggle only)
-                        btnJjalSearch.visibility = if (isVisible) View.VISIBLE else View.GONE
-
-                        // 만약 키보드가 원래 UI 모드였다면 짤 검색 UI 숨김
-                        if (isVisible) hideJjalSearch()
-                    }
+                // 2) 검색 완료 후 복귀: EXTRA_QUERY 가 있을 때만
+                if (query != null) {
+                    // SearchActivity 종료 → 실제 검색 모드로 전환
+                    isSearchActivityOpen = false
+                    showJjalSearch()
+                    jjalSearch.loadImagesFor(query)
+                    jjalSearch.selectMenuPosition(0)
                 }
             }
         }
-
         ContextCompat.registerReceiver(
             this, searchUiReceiver,
             IntentFilter(SearchActivity.ACTION_SEARCH_UI),
@@ -172,23 +166,32 @@ class KeyBoardService : InputMethodService() {
 
     override fun updateInputViewShown() {
         super.updateInputViewShown()
+
+        // ★ 검색 UI 모드이면서 •• SearchActivity 가 열려 있지 않을 때만 가드
+        if (isJjalSearchVisible && !isSearchActivityOpen) {
+            // Keep search UI visible when not in SearchActivity
+            keyboardFrame.removeAllViews()
+            val lp = LayoutParams(
+                LayoutParams.MATCH_PARENT,
+                LayoutParams.MATCH_PARENT
+            )
+            keyboardFrame.addView(jjalSearch.view, lp)
+            return
+        }
+
+        // 그렇지 않으면 원래 키보드 갱신 로직 실행
         currentInputConnection.finishComposingText()
-        // 숫자 모드 vs 문자 모드 분기
         if (currentInputEditorInfo.inputType == EditorInfo.TYPE_CLASS_NUMBER) {
             keyboardFrame.removeAllViews()
             keyboardFrame.addView(
                 KeyboardNumpad.newInstance(
-                    applicationContext,
-                    layoutInflater,
-                    currentInputConnection,
-                    keyboardInterationListener
+                    applicationContext, layoutInflater,
+                    currentInputConnection, keyboardInterationListener
                 )
             )
         } else {
             keyboardInterationListener.modechange(1)
         }
-        // IME가 다시 보일 때는 짤 검색 UI를 항상 숨깁니다
-        hideJjalSearch()
     }
 
     private fun showJjalSearch() {
