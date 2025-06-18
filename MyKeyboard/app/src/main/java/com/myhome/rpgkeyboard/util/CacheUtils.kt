@@ -11,9 +11,17 @@ object CacheUtils {
         return dir
     }
 
-    /** 파일 이름 생성 (원본 URL 해시 등으로 유니크하게) */
     fun makeCacheFile(context: Context, url: String): File {
-        val fileName = url.hashCode().toString() + url.substringAfterLast('.', ".gif")
-        return File(getGifCacheDir(context), fileName)
+        val cacheDir = File(context.cacheDir, "gif_cache").apply { if (!exists()) mkdirs() }
+        // url 끝에서 .gif/.png 포함된 부분
+        val rawExt = url.substringAfterLast('.', "")
+        // 확장자가 비어있거나 숫자처럼 오염됐다면, 기본 ".gif" 붙이기
+        val ext = when (rawExt.lowercase()) {
+            "gif", "png" -> rawExt
+            else         -> "gif"
+        }
+        // 반드시 이름에 . 확장자를 포함
+        val name = "${url.hashCode()}.$ext"
+        return File(cacheDir, name)
     }
 }
