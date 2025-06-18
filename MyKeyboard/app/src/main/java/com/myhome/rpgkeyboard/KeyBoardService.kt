@@ -19,7 +19,7 @@ import android.os.Handler
 import android.os.Looper
 import com.myhome.rpgkeyboard.JJalBox.SearchActivity
 import androidx.core.content.ContextCompat
-
+import com.myhome.rpgkeyboard.JJalBox.JJalSearch
 
 
 class KeyBoardService : InputMethodService() {

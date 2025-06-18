@@ -1,3 +1,5 @@
+package com.myhome.rpgkeyboard.JJalBox
+
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
