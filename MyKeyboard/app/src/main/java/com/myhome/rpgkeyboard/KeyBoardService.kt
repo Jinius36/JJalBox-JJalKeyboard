@@ -117,61 +117,65 @@ class KeyBoardService : InputMethodService() {
 
             // 1) URL → 캐시에 다운로드
             downloadToCache(
-                context = applicationContext,
-                imageUrl = url,
+                context   = applicationContext,
+                imageUrl  = url,
                 onSuccess = { cacheFile ->
                     Log.d("JJalSearch", "다운로드 완료: ${cacheFile.absolutePath}")
                     try {
                         // 2) FileProvider 로 content:// URI 생성
-                        //    manifest 에 선언한 authority 와 일치시켜야 합니다.
-                        val authority = "${applicationContext.packageName}.fileprovider"
+                        val authority  = "${applicationContext.packageName}.fileprovider"
                         val contentUri = FileProvider.getUriForFile(
                             applicationContext,
                             authority,
                             cacheFile
                         )
 
-                        // 3) MIME 타입은 파일 확장자에 따라 적절히 설정
+                        // 3) MIME 타입 설정
                         val mimeType = when (cacheFile.extension.lowercase()) {
                             "gif" -> "image/gif"
                             "png" -> "image/png"
                             else  -> "application/octet-stream"
                         }
 
-                        // 4) InputContentInfoCompat 으로 래핑
+                        // 4) InputContentInfoCompat 래핑
                         val inputContentInfo = InputContentInfoCompat(
                             contentUri,
                             ClipDescription(cacheFile.name, arrayOf(mimeType)),
                             null
                         )
 
-                        // 5) 권한 플래그: IME 가 contentUri 를 읽도록 허용
+                        // 5) 권한 플래그
                         val flags = InputConnectionCompat.INPUT_CONTENT_GRANT_READ_URI_PERMISSION
 
                         // 6) 실제 붙여넣기
-                        InputConnectionCompat.commitContent(
-                            currentInputConnection,        // InputConnection (from InputMethodService)
-                            currentInputEditorInfo,        // EditorInfo (from InputMethodService)
+                        val handled = InputConnectionCompat.commitContent(
+                            currentInputConnection,
+                            currentInputEditorInfo,
                             inputContentInfo,
                             flags,
-                            null                           // 옵셔널 커스텀 핸들러
+                            null
                         )
 
+                        // 7) 로깅
                         val desc = inputContentInfo.description
                         val mimeList = (0 until desc.mimeTypeCount)
                             .map { desc.getMimeType(it) }
                             .joinToString()
+                        Log.d("JJalSearch", "commitContent 호출 완료: uri=${contentUri}, mimeTypes=[$mimeList], flags=$flags, handled=$handled")
 
-                        Log.d(
-                            "JJalSearch",
-                            "commitContent 호출 완료: " +
-                                    "uri=${inputContentInfo.contentUri}, " +
-                                    "mimeTypes=[$mimeList], " +
-                                    "flags=$flags"
-                        )
+                        // 8) 전송 성공 시 캐시 파일 즉시 삭제
+                        if (handled) {
+                            if (cacheFile.delete()) {
+                                Log.d("JJalSearch", "캐시 파일 삭제됨: ${cacheFile.absolutePath}")
+                            } else {
+                                Log.w("JJalSearch", "캐시 파일 삭제 실패: ${cacheFile.absolutePath}")
+                            }
+                        }
 
                     } catch (e: Exception) {
                         Log.e("JJalSearch", "commitContent 실패", e)
+                        // 실패 시에도 캐시 정리
+                        cacheFile.delete()
                     }
                 },
                 onError = { err ->
@@ -179,6 +183,7 @@ class KeyBoardService : InputMethodService() {
                 }
             )
         }
+
 
         // 브로드캐스트 리시버 등록 (QUERY+VISIBLE 한번에 처리)
         searchUiReceiver = object : BroadcastReceiver() {
