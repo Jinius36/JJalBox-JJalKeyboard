@@ -137,10 +137,10 @@ class KeyBoardService : InputMethodService() {
     }
 
     private fun showJjalSearch() {
-        isJjalSearchVisible = true
-
         // 1) 프레임 비우기
         keyboardFrame.removeAllViews()
+
+        isJjalSearchVisible = true
 
         // 2) MATCH_PARENT x MATCH_PARENT 로 덮기
         val lp = FrameLayout.LayoutParams(
