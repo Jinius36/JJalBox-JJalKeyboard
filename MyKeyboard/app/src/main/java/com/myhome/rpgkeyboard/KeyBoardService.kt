@@ -157,6 +157,19 @@ class KeyBoardService : InputMethodService() {
                             null                           // 옵셔널 커스텀 핸들러
                         )
 
+                        val desc = inputContentInfo.description
+                        val mimeList = (0 until desc.mimeTypeCount)
+                            .map { desc.getMimeType(it) }
+                            .joinToString()
+
+                        Log.d(
+                            "JJalSearch",
+                            "commitContent 호출 완료: " +
+                                    "uri=${inputContentInfo.contentUri}, " +
+                                    "mimeTypes=[$mimeList], " +
+                                    "flags=$flags"
+                        )
+
                     } catch (e: Exception) {
                         Log.e("JJalSearch", "commitContent 실패", e)
                     }
@@ -165,9 +178,6 @@ class KeyBoardService : InputMethodService() {
                     Log.e("JJalSearch", "다운로드 실패", err)
                 }
             )
-
-            // 2) (기존) 바로 텍스트로 커밋
-            currentInputConnection.commitText(url, 1)
         }
 
         // 브로드캐스트 리시버 등록 (QUERY+VISIBLE 한번에 처리)
