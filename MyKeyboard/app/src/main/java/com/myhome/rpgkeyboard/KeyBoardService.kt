@@ -2,6 +2,9 @@ package com.myhome.rpgkeyboard
 
 import android.annotation.SuppressLint
 import android.content.BroadcastReceiver
+import android.content.ClipData
+import android.content.ClipDescription
+import android.content.ClipboardManager
 import android.inputmethodservice.InputMethodService
 import android.view.View
 import android.view.ViewGroup
@@ -15,12 +18,19 @@ import com.myhome.rpgkeyboard.keyboardview.*
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import com.myhome.rpgkeyboard.JJalBox.SearchActivity
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import androidx.core.view.inputmethod.InputConnectionCompat
+import androidx.core.view.inputmethod.InputContentInfoCompat
 import com.myhome.rpgkeyboard.JJalBox.JJalSearch
+import com.myhome.rpgkeyboard.util.downloadToCache
+
 
 
 class KeyBoardService : InputMethodService() {
@@ -103,8 +113,61 @@ class KeyBoardService : InputMethodService() {
             context   = applicationContext,
             inflater  = layoutInflater
         ) { url ->
+            Log.d("JJalSearch", "GIF 선택됨, URL = $url")
+
+            // 1) URL → 캐시에 다운로드
+            downloadToCache(
+                context = applicationContext,
+                imageUrl = url,
+                onSuccess = { cacheFile ->
+                    Log.d("JJalSearch", "다운로드 완료: ${cacheFile.absolutePath}")
+                    try {
+                        // 2) FileProvider 로 content:// URI 생성
+                        //    manifest 에 선언한 authority 와 일치시켜야 합니다.
+                        val authority = "${applicationContext.packageName}.fileprovider"
+                        val contentUri = FileProvider.getUriForFile(
+                            applicationContext,
+                            authority,
+                            cacheFile
+                        )
+
+                        // 3) MIME 타입은 파일 확장자에 따라 적절히 설정
+                        val mimeType = when (cacheFile.extension.lowercase()) {
+                            "gif" -> "image/gif"
+                            "png" -> "image/png"
+                            else  -> "application/octet-stream"
+                        }
+
+                        // 4) InputContentInfoCompat 으로 래핑
+                        val inputContentInfo = InputContentInfoCompat(
+                            contentUri,
+                            ClipDescription(cacheFile.name, arrayOf(mimeType)),
+                            null
+                        )
+
+                        // 5) 권한 플래그: IME 가 contentUri 를 읽도록 허용
+                        val flags = InputConnectionCompat.INPUT_CONTENT_GRANT_READ_URI_PERMISSION
+
+                        // 6) 실제 붙여넣기
+                        InputConnectionCompat.commitContent(
+                            currentInputConnection,        // InputConnection (from InputMethodService)
+                            currentInputEditorInfo,        // EditorInfo (from InputMethodService)
+                            inputContentInfo,
+                            flags,
+                            null                           // 옵셔널 커스텀 핸들러
+                        )
+
+                    } catch (e: Exception) {
+                        Log.e("JJalSearch", "commitContent 실패", e)
+                    }
+                },
+                onError = { err ->
+                    Log.e("JJalSearch", "다운로드 실패", err)
+                }
+            )
+
+            // 2) (기존) 바로 텍스트로 커밋
             currentInputConnection.commitText(url, 1)
-            // 검색 후 바로 커밋만, UI 토글은 브로드캐스트로 처리
         }
 
         // 브로드캐스트 리시버 등록 (QUERY+VISIBLE 한번에 처리)
