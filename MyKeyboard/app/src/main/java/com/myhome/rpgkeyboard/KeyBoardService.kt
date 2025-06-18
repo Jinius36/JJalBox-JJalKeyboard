@@ -58,10 +58,7 @@ class KeyBoardService : InputMethodService() {
                         keyboardFrame.removeAllViews()
                         keyboardFrame.addView(
                             KeyboardChunjiin.newInstance(
-                                applicationContext,
-                                layoutInflater,
-                                currentInputConnection,
-                                this
+                                applicationContext, layoutInflater, currentInputConnection, this
                             )
                         )
                     }
@@ -77,10 +74,7 @@ class KeyBoardService : InputMethodService() {
                     keyboardFrame.removeAllViews()
                     keyboardFrame.addView(
                         KeyboardEmoji.newInstance(
-                            applicationContext,
-                            layoutInflater,
-                            currentInputConnection,
-                            this
+                            applicationContext, layoutInflater, currentInputConnection, this
                         )
                     )
                 }
@@ -90,42 +84,63 @@ class KeyBoardService : InputMethodService() {
 
     override fun onCreate() {
         super.onCreate()
-        // 1) 키보드 전체 레이아웃 inflate
-        keyboardView = layoutInflater.inflate(R.layout.keyboard_view, null) as LinearLayout
+
+        // 1) 키보드 레이아웃 inflate
+        keyboardView  = layoutInflater.inflate(R.layout.keyboard_view, null) as LinearLayout
         keyboardFrame = keyboardView.findViewById(R.id.keyboard_frame)
 
-        searchUiReceiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context?, intent: Intent) {
-                val show = intent.getBooleanExtra(
-                    SearchActivity.EXTRA_IS_VISIBLE, true
-                )
-                Handler(Looper.getMainLooper()).post {
-                    btnJjalSearch.visibility =
-                        if (show) View.VISIBLE else View.GONE
-                }
-            }
-        }
-
-        val filter = IntentFilter(SearchActivity.ACTION_SEARCH_UI)
-        ContextCompat.registerReceiver(
-            /* context = */ this,
-            /* receiver = */ searchUiReceiver,
-            /* filter = */ filter,
-            /* flags = */ ContextCompat.RECEIVER_NOT_EXPORTED
-        )
-
-        // JJalSearch 생성만, 아직 붙이지 않습니다.
-        jjalSearch = JJalSearch(this, layoutInflater) { query ->
-            // TODO: 검색 처리 후 키보드 복귀
-            hideJjalSearch()
-        }
-
-        // 3) “짤 검색!” 버튼 바인딩
+        // 2) “짤 검색!” 버튼 바인딩
         btnJjalSearch = keyboardView.findViewById(R.id.btnJjalSearch)
         btnJjalSearch.setOnClickListener {
             if (isJjalSearchVisible) hideJjalSearch()
             else showJjalSearch()
         }
+
+        // 3) JJalSearch 객체 생성 (menuAdapter 초기화 포함)
+        jjalSearch = JJalSearch(
+            context   = applicationContext,
+            inflater  = layoutInflater
+        ) { url ->
+            currentInputConnection.commitText(url, 1)
+            // 검색 후 바로 커밋만, UI 토글은 브로드캐스트로 처리
+        }
+
+        // 4) 브로드캐스트 리시버 등록
+        searchUiReceiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context?, intent: Intent?) {
+                // 항상 UI 쓰레드에서 작동하도록
+                Handler(Looper.getMainLooper()).post {
+                    val isVisible = intent?.getBooleanExtra(
+                        SearchActivity.EXTRA_IS_VISIBLE, true
+                    ) ?: true
+
+                    // SearchActivity 에서 EXTRA_QUERY 도 함께 보낼 때
+                    val query = intent?.getStringExtra(SearchActivity.EXTRA_QUERY)
+
+                    if (query != null) {
+                        // “검색 완료 → 키보드로 복귀” 흐름
+                        showJjalSearch()
+                        jjalSearch.loadImagesFor(query)
+                        jjalSearch.selectMenuPosition(0)
+
+                        // 버튼 자체는 항상 숨긴 상태였으니, 다시 보여줄 필요 없습니다
+                    }
+                    else {
+                        // SearchActivity 실행 중(toggle only)
+                        btnJjalSearch.visibility = if (isVisible) View.VISIBLE else View.GONE
+
+                        // 만약 키보드가 원래 UI 모드였다면 짤 검색 UI 숨김
+                        if (isVisible) hideJjalSearch()
+                    }
+                }
+            }
+        }
+
+        ContextCompat.registerReceiver(
+            this, searchUiReceiver,
+            IntentFilter(SearchActivity.ACTION_SEARCH_UI),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
     }
 
     override fun onDestroy() {
@@ -184,8 +199,7 @@ class KeyBoardService : InputMethodService() {
 
         // 2) MATCH_PARENT x MATCH_PARENT 로 덮기
         val lp = FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
         )
         keyboardFrame.addView(jjalSearch.view, lp)
     }

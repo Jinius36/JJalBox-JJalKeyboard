@@ -29,6 +29,12 @@ class MenuAdapter(
         }
     }
 
+    /** 외부에서 선택 상태를 바꿀 때 호출 */
+    fun setSelectedPosition(pos: Int) {
+        selectedPosition = pos
+        notifyDataSetChanged()
+    }
+
     override fun getItemCount() = items.size
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
@@ -48,12 +54,14 @@ class MenuAdapter(
                     R.drawable.ic_search_24dp, 0, 0, 0
                 )
             }
+
             1 -> {
                 tv.text = ""
                 tv.setCompoundDrawablesWithIntrinsicBounds(
                     R.drawable.ic_recent, 0, 0, 0
                 )
             }
+
             else -> {
                 tv.text = items[position]
                 tv.setCompoundDrawablesWithIntrinsicBounds(0, 0, 0, 0)
@@ -61,10 +69,8 @@ class MenuAdapter(
         }
 
         // ② 선택된 항목만 파란색, 그 외 기본 색
-        val colorRes = if (position == selectedPosition)
-            R.color.blue_500
-        else
-            R.color.text_primary
+        val colorRes = if (position == selectedPosition) R.color.blue_500
+        else R.color.text_primary
         val color = ContextCompat.getColor(tv.context, colorRes)
         tv.setTextColor(color)
     }
