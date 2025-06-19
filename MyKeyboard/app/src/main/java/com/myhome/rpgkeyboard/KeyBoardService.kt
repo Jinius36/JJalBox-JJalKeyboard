@@ -163,13 +163,14 @@ class KeyBoardService : InputMethodService() {
                             .joinToString()
                         Log.d("JJalSearch", "commitContent 호출 완료: uri=${contentUri}, mimeTypes=[$mimeList], flags=$flags, handled=$handled")
 
-                        // 8) 전송 성공 시 캐시 파일 즉시 삭제
+                        // 8) 전송 성공 시 캐시 파일 삭제
                         if (handled) {
-                            if (cacheFile.delete()) {
-                                Log.d("JJalSearch", "캐시 파일 삭제됨: ${cacheFile.absolutePath}")
-                            } else {
-                                Log.w("JJalSearch", "캐시 파일 삭제 실패: ${cacheFile.absolutePath}")
-                            }
+                            // 예: 30초 뒤에 삭제
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                if (cacheFile.exists() && cacheFile.delete()) {
+                                    Log.d("JJalSearch", "지연된 캐시 파일 삭제: ${cacheFile.name}")
+                                }
+                            }, 30_000L)  // 30,000 밀리초 = 30초
                         }
 
                     } catch (e: Exception) {
