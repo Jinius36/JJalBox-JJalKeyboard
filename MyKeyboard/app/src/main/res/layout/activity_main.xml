@@ -12,18 +12,26 @@
             android:id="@+id/setting_header"
             layout="@layout/setting_header" />
 
-    <!-- 안내문 -->
+    <!-- 드롭다운 라벨 -->
     <TextView
-            android:id="@+id/tvGuide"
+            android:id="@+id/tvProviderLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="이미지 생성 모드"
+            android:textStyle="bold"
+            android:layout_marginStart="16dp"
+            android:layout_marginTop="8dp"
+            app:layout_constraintTop_toBottomOf="@id/setting_header"
+            app:layout_constraintStart_toStartOf="parent" />
+
+    <!-- 모델 선택 드롭다운 -->
+    <Spinner
+            android:id="@+id/spinnerProvider"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_marginStart="16dp"
             android:layout_marginEnd="16dp"
-            android:layout_marginTop="8dp"
-            android:background="@drawable/textlines"
-            android:padding="8dp"
-            android:text="'설정' > '일반' > '언어 및 입력방식' > '스크린 키보드'에서 JJaKeyboard를 추가한 후 사용하실 수 있습니다."
-            app:layout_constraintTop_toBottomOf="@id/setting_header"
+            app:layout_constraintTop_toBottomOf="@id/tvProviderLabel"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent" />
 
@@ -36,7 +44,7 @@
             android:layout_marginStart="16dp"
             android:layout_marginEnd="16dp"
             android:layout_marginTop="16dp"
-            app:layout_constraintTop_toBottomOf="@id/tvGuide"
+            app:layout_constraintTop_toBottomOf="@id/spinnerProvider"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent" />
 
@@ -130,5 +138,4 @@
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent"/>
-
 </androidx.constraintlayout.widget.ConstraintLayout>

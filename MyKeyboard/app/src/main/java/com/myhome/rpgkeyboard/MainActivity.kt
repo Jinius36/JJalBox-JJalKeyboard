@@ -28,9 +28,20 @@ class MainActivity : AppCompatActivity() {
     // ====== 설정 ======
     private val OPENAI_API_KEY = BuildConfig.OPENAI_API_KEY
     private val OPENAI_BASE_URL = BuildConfig.OPENAI_BASE_URL
-    private val IMAGE_MODEL = BuildConfig.IMAGE_MODEL
+    private val IMAGE_MODEL = BuildConfig.OPENAI_IMAGE_MODEL
+
+    // === Gemini 설정 ===
+    private val GEMINI_API_KEY = BuildConfig.GEMINI_API_KEY
+    private val GEMINI_IMAGE_MODEL = BuildConfig.GEMINI_IMAGE_MODEL
+    private val GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
+
+    private val TAG_GPT = "GPT_IMAGE"
+    private val TAG_GEMINI = "GEMINI_IMAGE"
+
+
 
     // ====== UI ======
+    private lateinit var spinnerProvider: Spinner
     private lateinit var btnPickImage: Button
     private lateinit var tvSelected: TextView
     private lateinit var etPrompt: EditText
@@ -40,6 +51,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnDownload: Button
 
     // ====== 상태 ======
+    private enum class Provider { GPT, GEMINI }
+    private var currentProvider: Provider = Provider.GPT
+
     private var selectedImageUri: Uri? = null
     private var resultImageBytes: ByteArray? = null
 
@@ -47,9 +61,9 @@ class MainActivity : AppCompatActivity() {
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val client by lazy {
         OkHttpClient.Builder()
-            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)  // 연결 대기
-            .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)     // 응답 대기
-            .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)    // 전송 대기
+            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
             .build()
     }
 
@@ -69,6 +83,8 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        // 바인딩
+        spinnerProvider = findViewById(R.id.spinnerProvider)
         btnPickImage = findViewById(R.id.btnPickImage)
         tvSelected = findViewById(R.id.tvSelected)
         etPrompt = findViewById(R.id.etPrompt)
@@ -76,6 +92,23 @@ class MainActivity : AppCompatActivity() {
         progress = findViewById(R.id.progress)
         ivResult = findViewById(R.id.ivResult)
         btnDownload = findViewById(R.id.btnDownload)
+
+        // 드롭다운 어댑터 설정 ("GPT", "Gemini")
+        val providers = listOf("GPT", "Gemini")
+        spinnerProvider.adapter =
+            ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, providers)
+
+        spinnerProvider.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>, view: View?, position: Int, id: Long
+            ) {
+                currentProvider = if (position == 0) Provider.GPT else Provider.GEMINI
+                Log.d("IMAGE_PROVIDER", "선택: $currentProvider")
+            }
+            override fun onNothingSelected(parent: AdapterView<*>) { /* no-op */ }
+        }
+        // 기본값: GPT
+        spinnerProvider.setSelection(0)
 
         btnPickImage.setOnClickListener { pickImage.launch("image/*") }
 
@@ -111,10 +144,16 @@ class MainActivity : AppCompatActivity() {
 
         ioScope.launch {
             try {
-                val bytes = if (imageUri == null)
-                    callOpenAITextToImage(prompt)
-                else
-                    callOpenAIImageEdit(prompt, imageUri)
+                val bytes = when (currentProvider) {
+                    Provider.GPT -> {
+                        if (imageUri == null) callOpenAITextToImage(prompt)
+                        else callOpenAIImageEdit(prompt, imageUri)
+                    }
+                    Provider.GEMINI -> {
+                        if (imageUri == null) callGeminiTextToImage(prompt)
+                        else callGeminiImageEdit(prompt, imageUri)
+                    }
+                }
 
                 if (bytes == null) throw RuntimeException("빈 응답")
 
@@ -126,9 +165,11 @@ class MainActivity : AppCompatActivity() {
                     setLoading(false)
                 }
             } catch (e: Exception) {
-                Log.e("GPT_IMAGE", "이미지 생성 실패", e)
+                val tag = if (currentProvider == Provider.GPT) TAG_GPT else TAG_GEMINI
+                Log.e(tag, "이미지 생성 실패", e)
                 mainScope.launch { setLoading(false) }
             }
+
         }
     }
 
@@ -137,12 +178,11 @@ class MainActivity : AppCompatActivity() {
     private fun reencodeToPng(raw: ByteArray): ByteArray {
         val bmp = BitmapFactory.decodeByteArray(raw, 0, raw.size)
             ?: throw RuntimeException("이미지 디코드 실패")
-        return ByteArrayOutputStream().use { bos ->
+        return java.io.ByteArrayOutputStream().use { bos ->
             bmp.compress(Bitmap.CompressFormat.PNG, 100, bos)
             bos.toByteArray()
         }
     }
-
 
     /** 텍스트 → 이미지 생성 */
     private fun callOpenAITextToImage(prompt: String): ByteArray? {
@@ -240,6 +280,110 @@ class MainActivity : AppCompatActivity() {
             }
 
             throw RuntimeException("응답에 url/b64_json 없음 :: ${bodyStr.take(500)}")
+        }
+    }
+
+    // Gemini 응답에서 첫 번째 base64 이미지를 꺼내서 PNG로 통일
+    private fun extractGeminiImageBytes(responseJson: String): ByteArray {
+        val root = org.json.JSONObject(responseJson)
+        val candidates = root.optJSONArray("candidates")
+            ?: throw RuntimeException("Gemini 응답에 candidates 없음 :: ${responseJson.take(300)}")
+        val first = candidates.getJSONObject(0)
+        val content = first.getJSONObject("content")
+        val parts = content.getJSONArray("parts")
+
+        for (i in 0 until parts.length()) {
+            val p = parts.getJSONObject(i)
+            // inline_data (snake_case) 또는 inlineData (camelCase)
+            val blob = p.optJSONObject("inline_data") ?: p.optJSONObject("inlineData")
+            if (blob != null && blob.has("data")) {
+                val b64 = blob.getString("data")
+                val raw = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+                // 그대로 써도 되지만, 갤러리 저장 일관성을 위해 PNG 재인코딩
+                return reencodeToPng(raw)
+            }
+        }
+        // 텍스트만 올 경우 대비(가이던스 메시지 등)
+        val textPart = parts.optJSONObject(0)?.optString("text")
+        throw RuntimeException("Gemini 응답에 이미지가 없습니다. text=${textPart ?: "없음"}")
+    }
+
+
+    // 텍스트 → 이미지 (Gemini)
+    private fun callGeminiTextToImage(prompt: String): ByteArray? {
+        val url = "$GEMINI_BASE_URL/models/$GEMINI_IMAGE_MODEL:generateContent"
+
+        // 공식 REST와 동일한 형태: contents.parts에 text만
+        val bodyJson = org.json.JSONObject().apply {
+            put("contents", org.json.JSONArray().apply {
+                put(org.json.JSONObject().apply {
+                    put("parts", org.json.JSONArray().apply {
+                        put(org.json.JSONObject().put("text", prompt))
+                    })
+                })
+            })
+        }.toString()
+
+        val req = okhttp3.Request.Builder()
+            .url(url)
+            .addHeader("x-goog-api-key", GEMINI_API_KEY)
+            .addHeader("Content-Type", "application/json")
+            .post(bodyJson.toRequestBody("application/json".toMediaType()))
+            .build()
+
+        client.newCall(req).execute().use { resp ->
+            val bodyStr = resp.body?.string() ?: ""
+            if (!resp.isSuccessful) {
+                throw RuntimeException("Gemini HTTP ${resp.code} :: ${bodyStr.take(500)}")
+            }
+            return extractGeminiImageBytes(bodyStr)
+        }
+    }
+
+
+
+    // 이미지 편집 (텍스트 + 입력 이미지 → 새 이미지)
+    private fun callGeminiImageEdit(prompt: String, imageUri: Uri): ByteArray? {
+        val url = "$GEMINI_BASE_URL/models/$GEMINI_IMAGE_MODEL:generateContent"
+
+        // 입력 이미지를 PNG로 확보
+        val original = readAllBytes(imageUri) ?: throw RuntimeException("이미지 읽기 실패")
+        val bmp = BitmapFactory.decodeByteArray(original, 0, original.size)
+            ?: throw RuntimeException("이미지 디코드 실패")
+        val pngBytes = java.io.ByteArrayOutputStream().use { bos ->
+            bmp.compress(Bitmap.CompressFormat.PNG, 100, bos); bos.toByteArray()
+        }
+        val b64 = android.util.Base64.encodeToString(pngBytes, android.util.Base64.NO_WRAP)
+
+        // 공식 REST 구조: contents.parts = [ {text}, {inlineData:{mimeType,data}} ]
+        val bodyJson = org.json.JSONObject().apply {
+            put("contents", org.json.JSONArray().apply {
+                put(org.json.JSONObject().apply {
+                    put("parts", org.json.JSONArray().apply {
+                        put(org.json.JSONObject().put("text", prompt))
+                        put(org.json.JSONObject().put("inlineData",
+                            org.json.JSONObject()
+                                .put("mimeType", "image/png")
+                                .put("data", b64)
+                        ))
+                    })
+                })
+            })
+        }.toString()
+
+        val req = okhttp3.Request.Builder()
+            .url(url)
+            .addHeader("x-goog-api-key", GEMINI_API_KEY)
+            .addHeader("Content-Type", "application/json")
+            .post(bodyJson.toRequestBody("application/json".toMediaType()))
+            .build()
+
+        client.newCall(req).execute().use { resp ->
+            val bodyStr = resp.body?.string() ?: ""
+            if (!resp.isSuccessful) {
+                throw RuntimeException("Gemini HTTP ${resp.code} :: ${bodyStr.take(500)}")
+            }
+            return extractGeminiImageBytes(bodyStr)
         }
     }
 
