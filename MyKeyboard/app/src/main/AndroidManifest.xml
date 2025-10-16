@@ -29,7 +29,7 @@
                 android:name=".KeyBoardService"
                 android:enabled="true"
                 android:exported="true"
-                android:label="MyKeyboard"
+                android:label="JJalKeyboard"
                 android:permission="android.permission.BIND_INPUT_METHOD">
             <meta-data
                     android:name="android.view.im"

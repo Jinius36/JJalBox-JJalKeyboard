@@ -2,9 +2,23 @@ apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 apply plugin: 'kotlin-kapt'
 
+def OPENAI_API_KEY = project.findProperty("OPENAI_API_KEY") ?: ""
+def OPENAI_BASE_URL = project.findProperty("OPENAI_BASE_URL") ?: "https://api.openai.com/v1"
+def IMAGE_MODEL = project.findProperty("IMAGE_MODEL") ?: "gpt-image-1"
+
 android {
     namespace 'com.myhome.rpgkeyboard'
     compileSdkVersion 34 // Add this line
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    defaultConfig {
+        buildConfigField "String", "OPENAI_API_KEY", "\"${OPENAI_API_KEY}\""
+        buildConfigField "String", "OPENAI_BASE_URL", "\"${OPENAI_BASE_URL}\""
+        buildConfigField "String", "IMAGE_MODEL", "\"${IMAGE_MODEL}\""
+    }
 
 
     compileOptions {
@@ -58,6 +72,7 @@ dependencies {
     // RetrofitClient 관련 (이미 있음)
     implementation 'com.squareup.retrofit2:retrofit:2.9.0'
     implementation 'com.squareup.retrofit2:converter-gson:2.9.0'
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     // 테스트 관련
     testImplementation 'junit:junit:4.13.2'
@@ -71,4 +86,9 @@ dependencies {
     // broadcast
     implementation "androidx.localbroadcastmanager:localbroadcastmanager:1.1.0"
 
+    // 코루틴
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+    // json 파서
+    // implementation("org.json:json:20240303")
 }

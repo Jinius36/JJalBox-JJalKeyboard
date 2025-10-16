@@ -4,27 +4,20 @@
                                                    android:layout_height="60dp"
                                                    android:background="@color/setting_header_background"
                                                    xmlns:app="http://schemas.android.com/apk/res-auto">
+
     <TextView
             android:id="@+id/header_title"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            app:layout_constraintTop_toTopOf="parent"
+            android:padding="8dp"
+            android:text="이미지 생성"
+            android:textColor="@color/keyboardBackground"
+            android:textSize="20sp"
             app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintHorizontal_bias="0.498"
             app:layout_constraintLeft_toLeftOf="parent"
-            android:textSize="20sp"
-            android:padding="8dp"
-            android:textColor="@color/keyboardBackground"
-            android:text="키보드 설정"/>
-    <TextView
-            android:id="@+id/submit_text"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            app:layout_constraintTop_toTopOf="parent"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintRight_toRightOf="parent"
-            android:textSize="20sp"
-            android:padding="8dp"
-            android:textColor="@color/keyboardBackground"
-            android:text="확인"/>
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
