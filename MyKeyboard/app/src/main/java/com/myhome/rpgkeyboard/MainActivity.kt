@@ -197,9 +197,29 @@ class MainActivity : AppCompatActivity() {
             .addFormDataPart("size", size)
 
         if (imageUri != null) {
-            val raw = readAllBytes(imageUri) ?: throw RuntimeException("이미지 읽기 실패")
-            val rb = raw.toRequestBody("application/octet-stream".toMediaTypeOrNull())
-            builder.addFormDataPart("image", "input", rb)
+            // MIME 추출 (없으면 PNG로 변환)
+            val mime = contentResolver.getType(imageUri)
+            val bytes = readAllBytes(imageUri) ?: throw RuntimeException("이미지 읽기 실패")
+
+            val (finalBytes, finalMime, filename) =
+                if (mime == null || !(mime == "image/png" || mime == "image/jpeg" || mime == "image/webp")) {
+                    // 안전하게 PNG로 변환
+                    val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    val bos = ByteArrayOutputStream()
+                    bmp.compress(Bitmap.CompressFormat.PNG, 100, bos)
+                    Triple(bos.toByteArray(), "image/png", "input.png")
+                } else {
+                    // 원래 MIME 사용
+                    val ext = when (mime) {
+                        "image/jpeg" -> "jpg"
+                        "image/webp" -> "webp"
+                        else -> "png"
+                    }
+                    Triple(bytes, mime, "input.$ext")
+                }
+
+            val rb = finalBytes.toRequestBody(finalMime.toMediaTypeOrNull())
+            builder.addFormDataPart("image", filename, rb)
         }
 
         val request = Request.Builder()
