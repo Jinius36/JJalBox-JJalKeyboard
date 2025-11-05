@@ -2,11 +2,8 @@ apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 apply plugin: 'kotlin-kapt'
 
-def OPENAI_API_KEY = project.findProperty("OPENAI_API_KEY") ?: ""
-def OPENAI_BASE_URL = project.findProperty("OPENAI_BASE_URL") ?: "https://api.openai.com/v1"
-def OPENAI_IMAGE_MODEL = project.findProperty("OPENAI_IMAGE_MODEL") ?: "gpt-image-1"
-def GEMINI_API_KEY = project.findProperty("GEMINI_API_KEY") ?: ""
-def GEMINI_IMAGE_MODEL = project.findProperty("GEMINI_IMAGE_MODEL") ?: "gemini-2.5-flash-image"
+// FastAPI 프록시 URL (gradle.properties의 PROXY_BASE_URL로 오버라이드)
+def PROXY_BASE_URL = project.findProperty("PROXY_BASE_URL") ?: ""
 
 android {
     namespace 'com.myhome.rpgkeyboard'
@@ -17,11 +14,7 @@ android {
     }
 
     defaultConfig {
-        buildConfigField "String", "OPENAI_API_KEY", "\"${OPENAI_API_KEY}\""
-        buildConfigField "String", "OPENAI_BASE_URL", "\"${OPENAI_BASE_URL}\""
-        buildConfigField "String", "OPENAI_IMAGE_MODEL", "\"${OPENAI_IMAGE_MODEL}\""
-        buildConfigField "String", "GEMINI_API_KEY", "\"${GEMINI_API_KEY}\""
-        buildConfigField "String", "GEMINI_IMAGE_MODEL", "\"${GEMINI_IMAGE_MODEL}\""
+        buildConfigField "String", "PROXY_BASE_URL", "\"${PROXY_BASE_URL}\""
     }
 
 
