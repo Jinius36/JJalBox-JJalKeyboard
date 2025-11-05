@@ -8,7 +8,7 @@ class JjalRepository {
 
     init {
         api = Retrofit.Builder()
-            .baseUrl("http://3.26.31.15:5000/")    // ← 실제 EC2 IP로 교체
+            .baseUrl("http://3.107.0.45:5000/")    // ← 실제 EC2 IP로 교체
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(JjalApi::class.java)
