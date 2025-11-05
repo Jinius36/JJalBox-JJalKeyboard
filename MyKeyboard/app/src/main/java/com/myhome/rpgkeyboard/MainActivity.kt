@@ -26,17 +26,8 @@ import com.myhome.rpgkeyboard.BuildConfig
 class MainActivity : AppCompatActivity() {
 
     // ====== 설정 ======
-    private val OPENAI_API_KEY = BuildConfig.OPENAI_API_KEY
-    private val OPENAI_BASE_URL = BuildConfig.OPENAI_BASE_URL
-    private val IMAGE_MODEL = BuildConfig.OPENAI_IMAGE_MODEL
-
-    // === Gemini 설정 ===
-    private val GEMINI_API_KEY = BuildConfig.GEMINI_API_KEY
-    private val GEMINI_IMAGE_MODEL = BuildConfig.GEMINI_IMAGE_MODEL
-    private val GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
-
-    private val TAG_GPT = "GPT_IMAGE"
-    private val TAG_GEMINI = "GEMINI_IMAGE"
+    private val PROXY_BASE_URL = BuildConfig.PROXY_BASE_URL
+    private val TAG_PROXY = "IMAGE_PROXY"
 
 
 
@@ -144,16 +135,16 @@ class MainActivity : AppCompatActivity() {
 
         ioScope.launch {
             try {
-                val bytes = when (currentProvider) {
-                    Provider.GPT -> {
-                        if (imageUri == null) callOpenAITextToImage(prompt)
-                        else callOpenAIImageEdit(prompt, imageUri)
-                    }
-                    Provider.GEMINI -> {
-                        if (imageUri == null) callGeminiTextToImage(prompt)
-                        else callGeminiImageEdit(prompt, imageUri)
-                    }
-                }
+                val providerStr = if (currentProvider == Provider.GPT) "gpt" else "gemini"
+                val mode = if (imageUri == null) "text2image" else "edit"
+                val bytes = callProxyGenerate(
+                    proxyBase = PROXY_BASE_URL,
+                    provider = providerStr,
+                    mode = mode,
+                    prompt = prompt,
+                    size = "1024x1024",
+                    imageUri = imageUri
+                )
 
                 if (bytes == null) throw RuntimeException("빈 응답")
 
@@ -165,8 +156,9 @@ class MainActivity : AppCompatActivity() {
                     setLoading(false)
                 }
             } catch (e: Exception) {
-                val tag = if (currentProvider == Provider.GPT) TAG_GPT else TAG_GEMINI
-                Log.e(tag, "이미지 생성 실패", e)
+//                val tag = if (currentProvider == Provider.GPT) TAG_GPT else TAG_GEMINI
+//                Log.e(tag, "이미지 생성 실패", e)
+                Log.e(TAG_PROXY, "이미지 생성 실패", e)
                 mainScope.launch { setLoading(false) }
             }
 
@@ -184,217 +176,43 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** 텍스트 → 이미지 생성 */
-    private fun callOpenAITextToImage(prompt: String): ByteArray? {
-        val url = "$OPENAI_BASE_URL/images/generations"
-        val json = JSONObject().apply {
-            put("model", IMAGE_MODEL)
-            put("prompt", prompt)
-            put("size", "1024x1024")
-            // response_format 안 넣음 (문서상 기본 응답은 url이지만, b64_json이 오는 케이스 대비 폴백 처리)
-        }.toString()
+    /**
+     * 프록시 서버 호출 (provider/gpt|gemini, mode/text2image|edit)
+     * 서버는 image/png 바이너리를 직접 반환해야 한다.
+     */
+    private fun callProxyGenerate(
+        proxyBase: String,
+        provider: String,
+        mode: String,
+        prompt: String,
+        size: String,
+        imageUri: Uri?
+    ): ByteArray? {
+        val url = "$proxyBase/v1/images/generate"
 
-        val req = Request.Builder()
-            .url(url)
-            .addHeader("Authorization", "Bearer $OPENAI_API_KEY")
-            .post(json.toRequestBody("application/json".toMediaType()))
-            .build()
-
-        client.newCall(req).execute().use { resp ->
-            val bodyStr = resp.body?.string() ?: ""
-            if (!resp.isSuccessful) {
-                throw RuntimeException("HTTP ${resp.code} :: ${bodyStr.take(500)}")
-            }
-
-            // data[0]에서 url 또는 b64_json 처리
-            val data0 = JSONObject(bodyStr)
-                .getJSONArray("data")
-                .getJSONObject(0)
-
-            // 1순위: url
-            val urlStr = data0.optString("url", null)
-            if (!urlStr.isNullOrEmpty()) {
-                return downloadBytes(urlStr)
-            }
-
-            // 2순위: b64_json
-            val b64 = data0.optString("b64_json", null)
-            if (!b64.isNullOrEmpty()) {
-                val raw = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
-                return reencodeToPng(raw)
-            }
-
-            // 둘 다 없으면 응답 본문 일부와 함께 예외
-            throw RuntimeException("응답에 url/b64_json 없음 :: ${bodyStr.take(500)}")
-        }
-    }
-
-
-    /** 이미지 편집 (첨부 이미지 + 프롬프트) */
-    private fun callOpenAIImageEdit(prompt: String, imageUri: Uri): ByteArray? {
-        val url = "$OPENAI_BASE_URL/images/edits"
-
-        // 편집은 PNG가 안전하니 PNG로 업로드 (JPEG 선택해도 여기서 PNG로 통일)
-        val original = readAllBytes(imageUri) ?: throw RuntimeException("이미지 읽기 실패")
-        val bmp = BitmapFactory.decodeByteArray(original, 0, original.size)
-            ?: throw RuntimeException("이미지 디코드 실패")
-        val pngBytes = ByteArrayOutputStream().use { bos ->
-            bmp.compress(Bitmap.CompressFormat.PNG, 100, bos)
-            bos.toByteArray()
-        }
-
-        val imageBody = pngBytes.toRequestBody("image/png".toMediaTypeOrNull())
-
-        val multipart = MultipartBody.Builder().setType(MultipartBody.FORM)
-            .addFormDataPart("model", IMAGE_MODEL)
+        val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("provider", provider)
+            .addFormDataPart("mode", mode)
             .addFormDataPart("prompt", prompt)
-            .addFormDataPart("size", "1024x1024")
-            .addFormDataPart("image", "input.png", imageBody)
-            .build()
+            .addFormDataPart("size", size)
 
-        val req = Request.Builder()
+        if (imageUri != null) {
+            val raw = readAllBytes(imageUri) ?: throw RuntimeException("이미지 읽기 실패")
+            val rb = raw.toRequestBody("application/octet-stream".toMediaTypeOrNull())
+            builder.addFormDataPart("image", "input", rb)
+        }
+
+        val request = Request.Builder()
             .url(url)
-            .addHeader("Authorization", "Bearer $OPENAI_API_KEY")
-            .post(multipart)
+            .post(builder.build())
             .build()
 
-        client.newCall(req).execute().use { resp ->
-            val bodyStr = resp.body?.string() ?: ""
+        client.newCall(request).execute().use { resp ->
             if (!resp.isSuccessful) {
-                throw RuntimeException("HTTP ${resp.code} :: ${bodyStr.take(500)}")
+                val msg = resp.body?.string()?.take(400) ?: "no body"
+                throw RuntimeException("Proxy HTTP ${resp.code} :: $msg")
             }
-
-            val data0 = JSONObject(bodyStr)
-                .getJSONArray("data")
-                .getJSONObject(0)
-
-            val urlStr = data0.optString("url", null)
-            if (!urlStr.isNullOrEmpty()) {
-                return downloadBytes(urlStr)
-            }
-
-            val b64 = data0.optString("b64_json", null)
-            if (!b64.isNullOrEmpty()) {
-                val raw = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
-                return reencodeToPng(raw)
-            }
-
-            throw RuntimeException("응답에 url/b64_json 없음 :: ${bodyStr.take(500)}")
-        }
-    }
-
-    // Gemini 응답에서 첫 번째 base64 이미지를 꺼내서 PNG로 통일
-    private fun extractGeminiImageBytes(responseJson: String): ByteArray {
-        val root = org.json.JSONObject(responseJson)
-        val candidates = root.optJSONArray("candidates")
-            ?: throw RuntimeException("Gemini 응답에 candidates 없음 :: ${responseJson.take(300)}")
-        val first = candidates.getJSONObject(0)
-        val content = first.getJSONObject("content")
-        val parts = content.getJSONArray("parts")
-
-        for (i in 0 until parts.length()) {
-            val p = parts.getJSONObject(i)
-            // inline_data (snake_case) 또는 inlineData (camelCase)
-            val blob = p.optJSONObject("inline_data") ?: p.optJSONObject("inlineData")
-            if (blob != null && blob.has("data")) {
-                val b64 = blob.getString("data")
-                val raw = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
-                // 그대로 써도 되지만, 갤러리 저장 일관성을 위해 PNG 재인코딩
-                return reencodeToPng(raw)
-            }
-        }
-        // 텍스트만 올 경우 대비(가이던스 메시지 등)
-        val textPart = parts.optJSONObject(0)?.optString("text")
-        throw RuntimeException("Gemini 응답에 이미지가 없습니다. text=${textPart ?: "없음"}")
-    }
-
-
-    // 텍스트 → 이미지 (Gemini)
-    private fun callGeminiTextToImage(prompt: String): ByteArray? {
-        val url = "$GEMINI_BASE_URL/models/$GEMINI_IMAGE_MODEL:generateContent"
-
-        // 공식 REST와 동일한 형태: contents.parts에 text만
-        val bodyJson = org.json.JSONObject().apply {
-            put("contents", org.json.JSONArray().apply {
-                put(org.json.JSONObject().apply {
-                    put("parts", org.json.JSONArray().apply {
-                        put(org.json.JSONObject().put("text", prompt))
-                    })
-                })
-            })
-        }.toString()
-
-        val req = okhttp3.Request.Builder()
-            .url(url)
-            .addHeader("x-goog-api-key", GEMINI_API_KEY)
-            .addHeader("Content-Type", "application/json")
-            .post(bodyJson.toRequestBody("application/json".toMediaType()))
-            .build()
-
-        client.newCall(req).execute().use { resp ->
-            val bodyStr = resp.body?.string() ?: ""
-            if (!resp.isSuccessful) {
-                throw RuntimeException("Gemini HTTP ${resp.code} :: ${bodyStr.take(500)}")
-            }
-            return extractGeminiImageBytes(bodyStr)
-        }
-    }
-
-
-
-    // 이미지 편집 (텍스트 + 입력 이미지 → 새 이미지)
-    private fun callGeminiImageEdit(prompt: String, imageUri: Uri): ByteArray? {
-        val url = "$GEMINI_BASE_URL/models/$GEMINI_IMAGE_MODEL:generateContent"
-
-        // 입력 이미지를 PNG로 확보
-        val original = readAllBytes(imageUri) ?: throw RuntimeException("이미지 읽기 실패")
-        val bmp = BitmapFactory.decodeByteArray(original, 0, original.size)
-            ?: throw RuntimeException("이미지 디코드 실패")
-        val pngBytes = java.io.ByteArrayOutputStream().use { bos ->
-            bmp.compress(Bitmap.CompressFormat.PNG, 100, bos); bos.toByteArray()
-        }
-        val b64 = android.util.Base64.encodeToString(pngBytes, android.util.Base64.NO_WRAP)
-
-        // 공식 REST 구조: contents.parts = [ {text}, {inlineData:{mimeType,data}} ]
-        val bodyJson = org.json.JSONObject().apply {
-            put("contents", org.json.JSONArray().apply {
-                put(org.json.JSONObject().apply {
-                    put("parts", org.json.JSONArray().apply {
-                        put(org.json.JSONObject().put("text", prompt))
-                        put(org.json.JSONObject().put("inlineData",
-                            org.json.JSONObject()
-                                .put("mimeType", "image/png")
-                                .put("data", b64)
-                        ))
-                    })
-                })
-            })
-        }.toString()
-
-        val req = okhttp3.Request.Builder()
-            .url(url)
-            .addHeader("x-goog-api-key", GEMINI_API_KEY)
-            .addHeader("Content-Type", "application/json")
-            .post(bodyJson.toRequestBody("application/json".toMediaType()))
-            .build()
-
-        client.newCall(req).execute().use { resp ->
-            val bodyStr = resp.body?.string() ?: ""
-            if (!resp.isSuccessful) {
-                throw RuntimeException("Gemini HTTP ${resp.code} :: ${bodyStr.take(500)}")
-            }
-            return extractGeminiImageBytes(bodyStr)
-        }
-    }
-
-
-    /** 이미지 URL → 바이트 다운로드 */
-    private fun downloadBytes(url: String): ByteArray {
-        val req = Request.Builder().url(url).build()
-        client.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful)
-                throw RuntimeException("이미지 다운로드 실패: HTTP ${resp.code}")
-            return resp.body?.bytes() ?: throw RuntimeException("빈 응답")
+            return resp.body?.bytes()
         }
     }
 
