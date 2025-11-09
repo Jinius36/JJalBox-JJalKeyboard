@@ -56,6 +56,8 @@
                 android:taskAffinity=""
                 android:windowSoftInputMode="stateVisible|adjustResize"
                 android:theme="@style/Theme.AppCompat.Light.NoActionBar"/>
+
+        <activity android:name=".MemeEditActivity" />
     </application>
 
 </manifest>
