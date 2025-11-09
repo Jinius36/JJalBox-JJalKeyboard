@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+    <LinearLayout
+            android:orientation="vertical"
+            android:padding="16dp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+        <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="템플릿: galteya (고정 원본 사용)"
+                android:paddingTop="4dp"/>
+
+        <Spinner
+                android:id="@+id/spinnerMask"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="12dp"/>
+
+        <EditText
+                android:id="@+id/etPrompt2"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="프롬프트 입력 (예: 건물 내부를 스타디움으로)"
+                android:inputType="textMultiLine"
+                android:minLines="2"
+                android:paddingTop="12dp"/>
+
+        <Button
+                android:id="@+id/btnRun"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="마스크 인페인팅 실행"
+                android:paddingTop="8dp"/>
+
+        <ProgressBar
+                android:id="@+id/progress2"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:visibility="gone"
+                style="?android:attr/progressBarStyleLarge"
+                android:paddingTop="12dp"/>
+
+        <ImageView
+                android:id="@+id/ivResult2"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:adjustViewBounds="true"
+                android:paddingTop="12dp"/>
+
+        <Button
+                android:id="@+id/btnSave"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="갤러리에 저장"
+                android:enabled="false"
+                android:paddingTop="12dp"/>
+    </LinearLayout>
+</ScrollView>

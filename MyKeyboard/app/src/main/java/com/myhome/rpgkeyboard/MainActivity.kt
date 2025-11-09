@@ -266,4 +266,20 @@ class MainActivity : AppCompatActivity() {
             false
         }
     }
+
+    // === 메뉴: Meme Edit 화면으로 이동 ===
+    override fun onCreateOptionsMenu(menu: android.view.Menu): Boolean {
+        menuInflater.inflate(R.menu.main_menu, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.menu_meme_edit -> {
+                startActivity(android.content.Intent(this, MemeEditActivity::class.java))
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
+    }
 }
