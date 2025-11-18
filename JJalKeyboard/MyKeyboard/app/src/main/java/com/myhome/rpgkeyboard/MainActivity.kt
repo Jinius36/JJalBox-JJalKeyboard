@@ -22,6 +22,11 @@ import java.io.ByteArrayOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
 import com.myhome.rpgkeyboard.BuildConfig
+// 썸네일 미리보기를 위한 imports
+import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import android.view.ViewGroup
+
 
 class MainActivity : AppCompatActivity() {
 
@@ -40,13 +45,20 @@ class MainActivity : AppCompatActivity() {
     private lateinit var progress: ProgressBar
     private lateinit var ivResult: ImageView
     private lateinit var btnDownload: Button
+    private lateinit var rvThumbs: RecyclerView // 썸네일 미리보기
 
     // ====== 상태 ======
     private enum class Provider { GPT, GEMINI }
     private var currentProvider: Provider = Provider.GPT
 
-    private var selectedImageUri: Uri? = null
+
+    // 첨부 이미지 상태 관리
+    private val MAX_IMAGES = 4
+    private val selectedImageUris = mutableListOf<Uri>()
+    private lateinit var thumbAdapter: ThumbAdapter
+
     private var resultImageBytes: ByteArray? = null
+
 
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -59,10 +71,29 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val pickImage =
-        registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-            selectedImageUri = uri
-            tvSelected.text = uri?.lastPathSegment ?: "선택된 이미지 없음"
+        registerForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris: List<Uri>? ->
+            selectedImageUris.clear()
+
+            if (uris.isNullOrEmpty()) {
+                tvSelected.text = "선택된 이미지 없음"
+                rvThumbs.visibility = View.GONE
+            } else {
+                if (uris.size > MAX_IMAGES) {
+                    Toast.makeText(
+                        this,
+                        "최대 ${MAX_IMAGES}장까지 선택됩니다. ${uris.size - MAX_IMAGES}장은 제외됩니다.",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+                selectedImageUris.addAll(uris.take(MAX_IMAGES))
+                tvSelected.text = "총 ${selectedImageUris.size}장 선택됨 (최대 ${MAX_IMAGES}장)"
+
+                rvThumbs.visibility = View.VISIBLE
+            }
+
+            updateThumbs()
         }
+
 
     override fun onDestroy() {
         super.onDestroy()
@@ -83,9 +114,10 @@ class MainActivity : AppCompatActivity() {
         progress = findViewById(R.id.progress)
         ivResult = findViewById(R.id.ivResult)
         btnDownload = findViewById(R.id.btnDownload)
+        rvThumbs = findViewById(R.id.rvThumbs)                  // 썸네일 미리보기
 
         // 드롭다운 어댑터 설정 ("GPT", "Gemini")
-        val providers = listOf("GPT", "Gemini")
+        val providers = listOf("GPT", "Gemini","갈테야테야 밈","눈 내리는 밤", "픽셀 아트 캐릭터", "동물의 숲 캐릭터")
         spinnerProvider.adapter =
             ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, providers)
 
@@ -103,13 +135,23 @@ class MainActivity : AppCompatActivity() {
 
         btnPickImage.setOnClickListener { pickImage.launch("image/*") }
 
+        // 썸네일 RecyclerView 설정
+        val gridLayoutManager = GridLayoutManager(this, 1)     // 처음엔 1열
+        rvThumbs.layoutManager = gridLayoutManager
+        thumbAdapter = ThumbAdapter()
+        rvThumbs.adapter = thumbAdapter
+        rvThumbs.visibility = View.GONE                        // 처음엔 숨김
+
         btnGenerate.setOnClickListener {
             val prompt = etPrompt.text?.toString()?.trim().orEmpty()
             if (prompt.isBlank()) {
                 Toast.makeText(this, "프롬프트를 입력하세요.", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            generateImage(prompt, selectedImageUri)
+
+            // TODO: 여러 장 중 첫 번째 이미지만 서버로 전달
+            val firstImage = selectedImageUris.firstOrNull()
+            generateImage(prompt, firstImage)
         }
 
         btnDownload.setOnClickListener {
@@ -127,6 +169,52 @@ class MainActivity : AppCompatActivity() {
         btnPickImage.isEnabled = !loading
         btnDownload.isEnabled = !loading && resultImageBytes != null
     }
+
+    // 썸네일 갱신 및 위치 조절 함수
+    private fun updateThumbs() {
+        // 이미지 개수에 따라 열 개수 조정
+        val count = selectedImageUris.size
+        val lm = rvThumbs.layoutManager as? GridLayoutManager
+        lm?.spanCount = when (count) {
+            0, 1 -> 2          // 1장일 땐 크게 1열
+            2 -> 2             // 2장이면 2열
+            3, 4 -> 2          // 3~4장은 2x2 형태
+            else -> 2
+        }
+
+        thumbAdapter.notifyDataSetChanged()
+    }
+
+    // 썸네일 어댑터 클래스
+    private inner class ThumbAdapter : RecyclerView.Adapter<ThumbAdapter.ThumbVH>() {
+
+        inner class ThumbVH(val iv: ImageView) : RecyclerView.ViewHolder(iv)
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ThumbVH {
+            // 한 줄에 spanCount 개가 들어갈 때 각 썸네일의 한 변 길이 계산
+            val span = (rvThumbs.layoutManager as? GridLayoutManager)?.spanCount ?: 1
+            val parentWidth = parent.measuredWidth.takeIf { it > 0 }
+                ?: (parent.resources.displayMetrics.widthPixels - parent.paddingLeft - parent.paddingRight)
+            val size = parentWidth / span
+
+            val iv = ImageView(parent.context).apply {
+                layoutParams = RecyclerView.LayoutParams(size, size)   // 정사각형 썸네일
+                adjustViewBounds = true
+                scaleType = ImageView.ScaleType.CENTER_CROP           // 잘리지 않게 비율 유지 + 적당히 크롭
+            }
+            return ThumbVH(iv)
+        }
+
+        override fun getItemCount(): Int = selectedImageUris.size
+
+        override fun onBindViewHolder(holder: ThumbVH, position: Int) {
+            val uri = selectedImageUris[position]
+            holder.iv.setImageURI(uri)
+        }
+    }
+
+
+
 
     private fun generateImage(prompt: String, imageUri: Uri?) {
         setLoading(true)

@@ -50,7 +50,7 @@ class JJalSearch(
         val imageList: RecyclerView = view.findViewById(R.id.image_list)
 
         // b) 메뉴 세팅 (검색·최근·카테고리)
-        val categories = listOf("인기", "행복", "웃김", "슬픔", "화남", "당황", "놀람", "예", "아니요")
+        val categories = listOf("인기", "강호동", "HI", "최고야", "헐", "고마워", "무한도전")
         val menuItems  = listOf("검색", "최근") + categories
         val initial = menuItems.indexOf("인기")  // 보통 2
 
