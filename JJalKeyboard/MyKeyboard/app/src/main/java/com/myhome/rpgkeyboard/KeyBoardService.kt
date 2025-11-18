@@ -2,9 +2,6 @@ package com.myhome.rpgkeyboard
 
 import android.annotation.SuppressLint
 import android.content.BroadcastReceiver
-import android.content.ClipData
-import android.content.ClipDescription
-import android.content.ClipboardManager
 import android.inputmethodservice.InputMethodService
 import android.view.View
 import android.view.ViewGroup
@@ -18,19 +15,12 @@ import com.myhome.rpgkeyboard.keyboardview.*
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import com.myhome.rpgkeyboard.JJalBox.SearchActivity
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
-import androidx.core.view.inputmethod.InputConnectionCompat
-import androidx.core.view.inputmethod.InputContentInfoCompat
 import com.myhome.rpgkeyboard.JJalBox.JJalSearch
-import com.myhome.rpgkeyboard.util.downloadToCache
-
 
 
 class KeyBoardService : InputMethodService() {
@@ -113,78 +103,9 @@ class KeyBoardService : InputMethodService() {
             context   = applicationContext,
             inflater  = layoutInflater
         ) { url ->
-            Log.d("JJalSearch", "GIF 선택됨, URL = $url")
-
-            // 1) URL → 캐시에 다운로드
-            downloadToCache(
-                context   = applicationContext,
-                imageUrl  = url,
-                onSuccess = { cacheFile ->
-                    Log.d("JJalSearch", "다운로드 완료: ${cacheFile.absolutePath}")
-                    try {
-                        // 2) FileProvider 로 content:// URI 생성
-                        val authority  = "${applicationContext.packageName}.fileprovider"
-                        val contentUri = FileProvider.getUriForFile(
-                            applicationContext,
-                            authority,
-                            cacheFile
-                        )
-
-                        // 3) MIME 타입 설정
-                        val mimeType = when (cacheFile.extension.lowercase()) {
-                            "gif" -> "image/gif"
-                            "png" -> "image/png"
-                            else  -> "application/octet-stream"
-                        }
-
-                        // 4) InputContentInfoCompat 래핑
-                        val inputContentInfo = InputContentInfoCompat(
-                            contentUri,
-                            ClipDescription(cacheFile.name, arrayOf(mimeType)),
-                            null
-                        )
-
-                        // 5) 권한 플래그
-                        val flags = InputConnectionCompat.INPUT_CONTENT_GRANT_READ_URI_PERMISSION
-
-                        // 6) 실제 붙여넣기
-                        val handled = InputConnectionCompat.commitContent(
-                            currentInputConnection,
-                            currentInputEditorInfo,
-                            inputContentInfo,
-                            flags,
-                            null
-                        )
-
-                        // 7) 로깅
-                        val desc = inputContentInfo.description
-                        val mimeList = (0 until desc.mimeTypeCount)
-                            .map { desc.getMimeType(it) }
-                            .joinToString()
-                        Log.d("JJalSearch", "commitContent 호출 완료: uri=${contentUri}, mimeTypes=[$mimeList], flags=$flags, handled=$handled")
-
-                        // 8) 전송 성공 시 캐시 파일 삭제
-                        if (handled) {
-                            // 예: 30초 뒤에 삭제
-                            Handler(Looper.getMainLooper()).postDelayed({
-                                if (cacheFile.exists() && cacheFile.delete()) {
-                                    Log.d("JJalSearch", "지연된 캐시 파일 삭제: ${cacheFile.name}")
-                                }
-                            }, 30_000L)  // 30,000 밀리초 = 30초
-                        }
-
-                    } catch (e: Exception) {
-                        Log.e("JJalSearch", "commitContent 실패", e)
-                        // 실패 시에도 캐시 정리
-                        cacheFile.delete()
-                    }
-                },
-                onError = { err ->
-                    Log.e("JJalSearch", "다운로드 실패", err)
-                }
-            )
+            currentInputConnection.commitText(url, 1)
+            // 검색 후 바로 커밋만, UI 토글은 브로드캐스트로 처리
         }
-
 
         // 브로드캐스트 리시버 등록 (QUERY+VISIBLE 한번에 처리)
         searchUiReceiver = object : BroadcastReceiver() {
