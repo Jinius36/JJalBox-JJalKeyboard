@@ -10,6 +10,8 @@ from typing import Optional, List, Any
 import os, base64, io
 import requests
 from openai import OpenAI
+from google import genai
+from google.genai import types
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
