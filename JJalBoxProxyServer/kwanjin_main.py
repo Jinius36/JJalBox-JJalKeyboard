@@ -98,19 +98,18 @@ def _style_prompt_ac_style(prompt: str) -> str:
 
 # ---------- 4-1. OpenAI / GPT-Image-1 계열 ----------
 
-def _openai_text2image(prompt: str, size: str) -> bytes:
+def _openai_text2image(prompt: str) -> bytes:
     """
     GPT-Image-1 text -> image
-    - prompt와 size를 받아 직접 API 호출
+    - prompt를 받아 직접 API 호출
     - 반환: raw jpeg 이미지 바이트
     """
-    img = client.images.generate( prompt=prompt, model=OPENAI_IMAGE_MODEL, n=1, output_format="jpeg", size=size, )
+    img = client.images.generate( prompt=prompt, model=OPENAI_IMAGE_MODEL, n=1, output_format="jpeg" )
     image_bytes = base64.b64decode(img.data[0].b64_json)
     return image_bytes
 
 def _openai_text_with_refs(
     prompt: str,
-    size: str,
     images: List[UploadFile],
 ) -> bytes:
     """
@@ -121,7 +120,6 @@ def _openai_text_with_refs(
 
 def _openai_img_edit(
     prompt: str,
-    size: str,
     base_image: UploadFile,
     mask_image: Optional[UploadFile] = None,
 ) -> bytes:
@@ -136,7 +134,6 @@ def _openai_img_edit(
 
 def _gemini_text2image(
     prompt: str,
-    size: str,
     ref_images: Optional[List[UploadFile]] = None,
 ) -> bytes:
     """
@@ -146,7 +143,6 @@ def _gemini_text2image(
 
 def _gemini_img2img(
     prompt: str,
-    size: str,
     images: List[UploadFile],
 ) -> bytes:
     """
@@ -182,24 +178,24 @@ async def generate_image(
             if mode == "text2image":
                 if not images:
                     # text -> image
-                    img_bytes = _openai_text2image(prompt, size)
+                    img_bytes = _openai_text2image(prompt)
                 else:
                     # (text + images) -> image (reference image)
-                    img_bytes = _openai_text_with_refs(prompt, size, images)
+                    img_bytes = _openai_text_with_refs(prompt, images)
             else:  # mode == "edit"
                 if not images:
                     raise HTTPException(400, "edit mode requires at least one image")
                 base_image = images[0]
-                img_bytes = _openai_img_edit(prompt, size, base_image)
+                img_bytes = _openai_img_edit(prompt, base_image)
 
         # ----- 기본 Gemini provider -----
         elif provider == Provider.GEMINI:
             if mode == "text2image":
-                img_bytes = _gemini_text2image(prompt, size, images)
+                img_bytes = _gemini_text2image(prompt, images)
             else:  # mode == "edit"
                 if not images:
                     raise HTTPException(400, "edit mode requires at least one image")
-                img_bytes = _gemini_img2img(prompt, size, images)
+                img_bytes = _gemini_img2img(prompt, images)
 
         # ----- 밈/스타일 provider들 (나중에 구현) -----
         elif provider == Provider.MEME_GALTEYA:
@@ -210,35 +206,35 @@ async def generate_image(
             # 나중에 템플릿/인페인팅으로 변경 가능
             if mode == "text2image":
                 if not images:
-                    img_bytes = _openai_text2image(styled, size)
+                    img_bytes = _openai_text2image(styled)
                 else:
-                    img_bytes = _openai_text_with_refs(styled, size, images)
+                    img_bytes = _openai_text_with_refs(styled, images)
             else:
                 if not images:
                     raise HTTPException(400, "edit mode requires at least one image")
                 base_image = images[0]
-                img_bytes = _openai_img_edit(styled, size, base_image)
+                img_bytes = _openai_img_edit(styled, base_image)
 
         elif provider == Provider.SNOW_NIGHT:
             # Gemini image -> image 전용으로 설계
             if not images:
                 raise HTTPException(400, "snow_night requires at least one image")
             styled = _style_prompt_snow_night(prompt)
-            img_bytes = _gemini_img2img(styled, size, images)
+            img_bytes = _gemini_img2img(styled, images)
 
         elif provider == Provider.PIXEL_ART:
             # GPT image -> image (참조 이미지 필수)
             if not images:
                 raise HTTPException(400, "pixel_art requires at least one image")
             styled = _style_prompt_pixel_art(prompt)
-            img_bytes = _openai_text_with_refs(styled, size, images)
+            img_bytes = _openai_text_with_refs(styled, images)
 
         elif provider == Provider.AC_STYLE:
             # GPT image -> image (참조 이미지 필수)
             if not images:
                 raise HTTPException(400, "ac_style requires at least one image")
             styled = _style_prompt_ac_style(prompt)
-            img_bytes = _openai_text_with_refs(styled, size, images)
+            img_bytes = _openai_text_with_refs(styled, images)
 
         else:
             raise HTTPException(400, "unsupported provider")
@@ -294,11 +290,11 @@ def _draw_text(img, text, bbox, font_spec):
     """지정된 bbox 영역에 텍스트를 렌더링."""
     ...
 
-def _merge_masks(mask_images, size):
+def _merge_masks(mask_images):
     """여러 개의 마스크 이미지를 하나로 합성."""
     ...
 
-def _call_inpaint(base_bytes, mask_bytes, prompt, size):
+def _call_inpaint(base_bytes, mask_bytes, prompt):
     """OpenAI /images/edits로 인페인팅 호출."""
     ...
 
