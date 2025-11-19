@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- 활성(토글 ON) 상태 -->
+    <item android:state_selected="true">
+        <shape android:shape="rectangle">
+            <corners android:radius="12dp"/>
+            <gradient
+                android:angle="45"
+                android:startColor="#FF6AD5"
+                android:endColor="#7A5FFF"/>
+            <stroke android:width="2dp" android:color="#FFFFFF"/>
+        </shape>
+    </item>
+
+    <!-- 비활성(토글 OFF) 상태 -->
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="12dp"/>
+            <solid android:color="#333333"/>
+            <stroke android:width="2dp" android:color="#666666"/>
+        </shape>
+    </item>
+
+</selector>
