@@ -68,6 +68,7 @@ class MainActivity : AppCompatActivity() {
     private val selectedImageUris = mutableListOf<Uri>()
     private lateinit var thumbAdapter: ThumbAdapter
 
+    // 결과 이미지 Byte
     private var resultImageBytes: ByteArray? = null
 
 
@@ -227,9 +228,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-
-
-
+    // ====== 이미지 생성 ======
     private fun generateImage(prompt: String, imageUris: List<Uri>) {
         setLoading(true)
         resultImageBytes = null
@@ -238,24 +237,22 @@ class MainActivity : AppCompatActivity() {
         ioScope.launch {
             try {
                 val providerStr = currentProvider.apiName
-                val hasImages = imageUris.isNotEmpty()
-                val mode = "text2image"   // 이제 항상 text2image로 두고, hasImages는 서버가 해석
 
                 val bytes = callProxyGenerate(
                     proxyBase = PROXY_BASE_URL,
                     provider = providerStr,
-                    mode = mode,
                     prompt = prompt,
-                    size = "1024x1024",
-                    imageUris = imageUris      // <-- 리스트
+                    imageUris = imageUris
                 )
 
                 if (bytes == null) throw RuntimeException("빈 응답")
 
                 mainScope.launch {
                     resultImageBytes = bytes
+
                     val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                     ivResult.setImageBitmap(bmp)
+
                     btnDownload.isEnabled = true
                     setLoading(false)
                 }
@@ -266,63 +263,32 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // 원시 바이트(raw)가 JPG/PNG 등 어떤 포맷이든 Bitmap으로 디코드한 뒤
-    // PNG로 다시 인코딩해서 바이트 배열로 반환
-    private fun reencodeToPng(raw: ByteArray): ByteArray {
-        val bmp = BitmapFactory.decodeByteArray(raw, 0, raw.size)
-            ?: throw RuntimeException("이미지 디코드 실패")
-        return java.io.ByteArrayOutputStream().use { bos ->
-            bmp.compress(Bitmap.CompressFormat.PNG, 100, bos)
-            bos.toByteArray()
-        }
-    }
 
     /**
-     * 프록시 서버 호출 (provider/gpt|gemini, mode/text2image|edit)
+     * 프록시 서버 호출
      * 서버는 image/png 바이너리를 직접 반환해야 한다.
      */
     private fun callProxyGenerate(
         proxyBase: String,
         provider: String,
-        mode: String,
         prompt: String,
-        size: String,
-        imageUris: List<Uri>   // 여러 장
+        imageUris: List<Uri>
     ): ByteArray? {
         val url = "$proxyBase/v1/images/generate"
 
-        val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
+        val builder = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
             .addFormDataPart("provider", provider)
-            .addFormDataPart("mode", mode)
             .addFormDataPart("prompt", prompt)
-            .addFormDataPart("size", size)
 
-        // 여러 이미지 첨부: 필드 이름은 서버 쪽과 맞추기 (예: "images")
-        if (imageUris.isNotEmpty()) {
-            for ((index, uri) in imageUris.withIndex()) {
-                val mime = contentResolver.getType(uri)
-                val bytes = readAllBytes(uri) ?: throw RuntimeException("이미지 읽기 실패")
+        // 여러 이미지 첨부: 서버는 images: List<UploadFile>로 받음
+        for ((index, uri) in imageUris.withIndex()) {
+            val mime = contentResolver.getType(uri) ?: "application/octet-stream"
+            val bytes = readAllBytes(uri) ?: throw RuntimeException("이미지 읽기 실패")
 
-                val (finalBytes, finalMime, filename) =
-                    if (mime == null || !(mime == "image/png" || mime == "image/jpeg" || mime == "image/webp")) {
-                        // 안전하게 PNG 변환
-                        val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                        val bos = ByteArrayOutputStream()
-                        bmp.compress(Bitmap.CompressFormat.PNG, 100, bos)
-                        Triple(bos.toByteArray(), "image/png", "input_$index.png")
-                    } else {
-                        val ext = when (mime) {
-                            "image/jpeg" -> "jpg"
-                            "image/webp" -> "webp"
-                            else -> "png"
-                        }
-                        Triple(bytes, mime, "input_$index.$ext")
-                    }
-
-                val rb = finalBytes.toRequestBody(finalMime.toMediaTypeOrNull())
-                // ★ 서버에서 images: list[UploadFile]로 받을 예정이므로 필드 이름 "images"
-                builder.addFormDataPart("images", filename, rb)
-            }
+            val filename = "input_$index"  // 확장자 없어도 됨 (서버에서 처리)
+            val rb = bytes.toRequestBody(mime.toMediaTypeOrNull())
+            builder.addFormDataPart("images", filename, rb)
         }
 
         val request = Request.Builder()
@@ -338,6 +304,7 @@ class MainActivity : AppCompatActivity() {
             return resp.body?.bytes()
         }
     }
+
 
     private fun readAllBytes(uri: Uri): ByteArray? =
         contentResolver.openInputStream(uri)?.use { it.readBytes() }
