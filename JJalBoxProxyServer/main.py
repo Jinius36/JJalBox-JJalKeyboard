@@ -381,7 +381,7 @@ async def generate_image(
         # ----- 기본 Gemini provider -----
         elif provider == Provider.GEMINI:
             img_bytes = _gemini_text2image(prompt, images)
-            return StreamingResponse(io.BytesIO(img_bytes), media_type="image/png")
+            media_type = "image/jpeg"
 
         # ----- 갈테야 밈 (JPEG) -----
         elif provider == Provider.MEME_GALTEYA:
@@ -399,7 +399,7 @@ async def generate_image(
             if not images:
                 raise HTTPException(400, "snow_night requires at least one image")
             styled = _style_prompt_snow_night(prompt)
-            img_bytes = _gemini_img2img(styled, images)             # JPEG 생성 가정
+            img_bytes = _gemini_text2image(styled, images)             # JPEG 생성 가정
             media_type = "image/jpeg"
 
         # ----- 픽셀 아트 스티커 (PNG + transparent) -----
