@@ -408,7 +408,7 @@ async def generate_image(
         elif provider == Provider.PIXEL_ART:
             if not images:
                 raise HTTPException(400, "pixel_art requires at least one image")
-            styled = _style_prompt_pixel_art(prompt)
+            styled = _style_prompt_pixel_art()
             img_bytes = _openai_text_with_refs_transparent(styled, images)      # PNG + 투명 배경 생성
             media_type = "image/png"
 
@@ -416,7 +416,7 @@ async def generate_image(
         elif provider == Provider.AC_STYLE:
             if not images:
                 raise HTTPException(400, "ac_style requires at least one image")
-            styled = _style_prompt_ac_style(prompt)
+            styled = _style_prompt_ac_style()
             img_bytes = _openai_text_with_refs_transparent(styled, images)      # PNG + 투명 배경 생성
             media_type = "image/png"
 
