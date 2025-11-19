@@ -12,13 +12,12 @@ import requests
 from openai import OpenAI
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from PIL import Image, ImageDraw, ImageFont
 import json
-from IPython.display import Image as IPImage, display
 
-# Provider 선택
+# Provider 선택 (프론트 enum과 동일)
 class Provider(str, Enum):
     GPT = "gpt"
     GEMINI = "gemini"
@@ -36,7 +35,7 @@ GEMINI_BASE = os.getenv("GEMINI_BASE_URL", "")
 OPENAI_IMAGE_MODEL = os.getenv("OPENAI_IMAGE_MODEL", "")
 GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "")
 
-# OpenAI 클라이언트 초기화 및 변수 설정
+# OpenAI 클라이언트 초기화
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 # FastAPI 앱 및 CORS 설정
@@ -57,16 +56,16 @@ def _png_bytes(img_bytes: bytes) -> bytes:
     """임의 포맷 바이트를 PNG로 변환(일관성 보장). 실패 시 원본 반환."""
     ...
 
-def _http_err(resp: requests.Response):
-    """외부 API 에러를 FastAPI HTTPException으로 변환."""
-    ...
-
 def _normalize_upload_image(upload: UploadFile):
     """
     업로드된 이미지를 읽어서:
       - 지원하지 않는 포맷이면 PNG로 변환
       - (바이트, mime, filename) 튜플로 반환
     """
+    ...
+
+def _http_err_from_requests(resp: requests.Response):
+    """requests.Response를 HTTPException으로 변환 (디버그용 에러 메시지 포함)."""
     ...
 
 
@@ -93,24 +92,21 @@ def _style_prompt_ac_style(prompt: str) -> str:
 
 
 # ==========================================
-# 4. 로우 레벨 벤더 호출 레이어
-#    (OpenAI / Gemini 각각의 text2image, img2img 등)
+# 4. 벤더 호출 함수 (실제 OpenAI/Gemini API 호출)
+#    여기서는 "bytes"만 반환하고, Response는 엔드포인트에서 만든다.
 # ==========================================
 
-# ---------- 4-1. OpenAI 계열 ----------
+# ---------- 4-1. OpenAI / GPT-Image-1 계열 ----------
 
 def _openai_text2image(prompt: str, size: str) -> bytes:
     """
-    OpenAI /images/generations (text -> image)
-    - body: JSON
-    - 반환: raw 이미지 바이트
+    GPT-Image-1 text -> image
+    - prompt와 size를 받아 직접 API 호출
+    - 반환: raw jpeg 이미지 바이트
     """
-    img = client.images.generate(
-        model=OPENAI_IMAGE_MODEL,
-        prompt=prompt,
-        n=1,
-    )
-    return base64.b64decode(img.data[0].b64_json)
+    img = client.images.generate( prompt=prompt, model=OPENAI_IMAGE_MODEL, n=1, output_format="jpeg", size=size, )
+    image_bytes = base64.b64decode(img.data[0].b64_json)
+    return image_bytes
 
 def _openai_text_with_refs(
     prompt: str,
@@ -118,8 +114,8 @@ def _openai_text_with_refs(
     images: List[UploadFile],
 ) -> bytes:
     """
-    OpenAI /images/generations (text + image reference -> image)
-    - body: multipart/form-data (model, prompt, size, image[])
+    GPT-Image-1 text + reference images -> image
+    - 업로드된 이미지를 참조로 쓰는 text2image
     """
     ...
 
@@ -130,13 +126,13 @@ def _openai_img_edit(
     mask_image: Optional[UploadFile] = None,
 ) -> bytes:
     """
-    OpenAI /images/edits (image -> image / 인페인팅)
-    - base 이미지와 선택적 mask를 사용해 편집
+    GPT-Image-1 이미지 편집 (image -> image / 인페인팅)
+    - /images/edits 엔드포인트 사용
     """
     ...
 
 
-# ---------- 4-2. Gemini 계열 ----------
+# ---------- 4-2. Gemini 계열 (나중에 구현) ----------
 
 def _gemini_text2image(
     prompt: str,
@@ -144,8 +140,7 @@ def _gemini_text2image(
     ref_images: Optional[List[UploadFile]] = None,
 ) -> bytes:
     """
-    Gemini generateContent (text -> image, optional image reference)
-    - contents.parts에 text + inlineData(image) 전달
+    Gemini text -> image (참조 이미지 선택적)
     """
     ...
 
@@ -155,146 +150,100 @@ def _gemini_img2img(
     images: List[UploadFile],
 ) -> bytes:
     """
-    Gemini generateContent (image -> image)
-    - 최소 1장의 이미지를 받아 img2img처럼 처리
+    Gemini image -> image
     """
     ...
 
 
 # ==========================================
-# 5. Provider 레벨 라우터
-#    (비즈니스 의미에 따라 어떤 벤더/모드로 보낼지 결정)
-# ==========================================
-
-def _route_gpt(
-    mode: str,
-    prompt: str,
-    size: str,
-    images: Optional[List[UploadFile]],
-) -> bytes:
-    """
-    provider == gpt 인 경우:
-      - mode == "text2image":
-          - 이미지 없음 -> _openai_text2image
-          - 이미지 있음 -> _openai_text_with_refs (참조 이미지)
-      - mode == "edit":
-          - 첫 번째 이미지를 base로 _openai_img_edit
-    """
-    ...
-
-def _route_gemini(
-    mode: str,
-    prompt: str,
-    size: str,
-    images: Optional[List[UploadFile]],
-) -> bytes:
-    """
-    provider == gemini 인 경우:
-      - mode == "text2image":
-          - 이미지 유무와 관계없이 _gemini_text2image
-      - mode == "edit":
-          - 첫 번째 이미지를 사용해 _gemini_img2img
-    """
-    ...
-
-def _route_meme_galteya(
-    mode: str,
-    prompt: str,
-    size: str,
-    images: Optional[List[UploadFile]],
-) -> bytes:
-    """
-    provider == meme_galteya:
-      - GPT 이미지 모델 사용
-      - text / (text + images) -> 밈 스타일 프롬프트로 감싸서 생성
-      - 내부적으로는 _route_gpt 재사용 가능
-    """
-    ...
-
-def _route_snow_night(
-    mode: str,
-    prompt: str,
-    size: str,
-    images: Optional[List[UploadFile]],
-) -> bytes:
-    """
-    provider == snow_night:
-      - Gemini 기반 image -> image
-      - 최소 1장의 이미지가 필수
-      - 모드는 사실상 img2img이므로, mode 값에 상관 없이 _gemini_img2img 호출
-    """
-    ...
-
-def _route_pixel_art(
-    mode: str,
-    prompt: str,
-    size: str,
-    images: Optional[List[UploadFile]],
-) -> bytes:
-    """
-    provider == pixel_art:
-      - GPT 이미지(gpt-image-1) 기반 image -> image
-      - 최소 1장의 이미지가 필수
-      - 스타일 프롬프트(_style_prompt_pixel_art)로 감싸고,
-        OpenAI text+image reference 방식(_openai_text_with_refs) 사용
-    """
-    ...
-
-def _route_ac_style(
-    mode: str,
-    prompt: str,
-    size: str,
-    images: Optional[List[UploadFile]],
-) -> bytes:
-    """
-    provider == ac_style:
-      - GPT 이미지(gpt-image-1) 기반 image -> image
-      - 최소 1장의 이미지가 필수
-      - 스타일 프롬프트(_style_prompt_ac_style)로 감싸고,
-        OpenAI text+image reference 방식(_openai_text_with_refs) 사용
-    """
-    ...
-
-
-# ==========================================
-# 6. 이미지 생성 엔드포인트
+# 5. 이미지 생성 엔드포인트 (+ provider별 분기까지 한 곳에서 처리)
 # ==========================================
 
 @app.post("/v1/images/generate")
 async def generate_image(
     provider: Provider = Form(...),
-    mode: str = Form(...),               # "text2image" | "edit"
     prompt: str = Form(...),
-    size: str = Form("1024x1024"),
     images: Optional[List[UploadFile]] = File(None),
 ):
     """
     엔트리 포인트:
-      1) mode 값 검증
-      2) provider 별 라우터로 분기
-      3) 최종적으로 bytes를 받아 PNG로 감싸 StreamingResponse 반환
+      1) mode 검증
+      2) provider별 동작 정의
+      3) 벤더 헬퍼 호출
+      4) bytes -> PNG로 변환 후 StreamingResponse 반환
     """
     try:
-        # 1. mode 검증
-        ...
+        # 1. provider별 동작 정의
+        #    👉 지금은 GPT-Image-1만 먼저 제대로 붙이고,
+        #       나중에 Gemini / 스타일 프리셋을 채워 넣는 방향으로.
 
-        # 2. provider별 라우팅
+        # ----- 기본 GPT provider -----
         if provider == Provider.GPT:
-            img_bytes = _route_gpt(mode, prompt, size, images)
+            if mode == "text2image":
+                if not images:
+                    # text -> image
+                    img_bytes = _openai_text2image(prompt, size)
+                else:
+                    # (text + images) -> image (reference image)
+                    img_bytes = _openai_text_with_refs(prompt, size, images)
+            else:  # mode == "edit"
+                if not images:
+                    raise HTTPException(400, "edit mode requires at least one image")
+                base_image = images[0]
+                img_bytes = _openai_img_edit(prompt, size, base_image)
+
+        # ----- 기본 Gemini provider -----
         elif provider == Provider.GEMINI:
-            img_bytes = _route_gemini(mode, prompt, size, images)
+            if mode == "text2image":
+                img_bytes = _gemini_text2image(prompt, size, images)
+            else:  # mode == "edit"
+                if not images:
+                    raise HTTPException(400, "edit mode requires at least one image")
+                img_bytes = _gemini_img2img(prompt, size, images)
+
+        # ----- 밈/스타일 provider들 (나중에 구현) -----
         elif provider == Provider.MEME_GALTEYA:
-            img_bytes = _route_meme_galteya(mode, prompt, size, images)
+            # 1) 스타일 프롬프트 적용
+            # 2) GPT provider 플로우를 재사용
+            styled = _style_prompt_meme_galteya(prompt)
+            # 여기서는 GPT text2image와 동일하게 동작시키거나,
+            # 나중에 템플릿/인페인팅으로 변경 가능
+            if mode == "text2image":
+                if not images:
+                    img_bytes = _openai_text2image(styled, size)
+                else:
+                    img_bytes = _openai_text_with_refs(styled, size, images)
+            else:
+                if not images:
+                    raise HTTPException(400, "edit mode requires at least one image")
+                base_image = images[0]
+                img_bytes = _openai_img_edit(styled, size, base_image)
+
         elif provider == Provider.SNOW_NIGHT:
-            img_bytes = _route_snow_night(mode, prompt, size, images)
+            # Gemini image -> image 전용으로 설계
+            if not images:
+                raise HTTPException(400, "snow_night requires at least one image")
+            styled = _style_prompt_snow_night(prompt)
+            img_bytes = _gemini_img2img(styled, size, images)
+
         elif provider == Provider.PIXEL_ART:
-            img_bytes = _route_pixel_art(mode, prompt, size, images)
+            # GPT image -> image (참조 이미지 필수)
+            if not images:
+                raise HTTPException(400, "pixel_art requires at least one image")
+            styled = _style_prompt_pixel_art(prompt)
+            img_bytes = _openai_text_with_refs(styled, size, images)
+
         elif provider == Provider.AC_STYLE:
-            img_bytes = _route_ac_style(mode, prompt, size, images)
+            # GPT image -> image (참조 이미지 필수)
+            if not images:
+                raise HTTPException(400, "ac_style requires at least one image")
+            styled = _style_prompt_ac_style(prompt)
+            img_bytes = _openai_text_with_refs(styled, size, images)
+
         else:
             raise HTTPException(400, "unsupported provider")
 
-        # 3. 공통 응답: PNG로 반환
+        # 3. 공통 응답: PNG로 감싸서 반환
         png = _png_bytes(img_bytes)
         return StreamingResponse(io.BytesIO(png), media_type="image/png")
 
@@ -306,9 +255,6 @@ async def generate_image(
 
 # ==========================================
 # 7. Meme Template Based Feature (기존 기능)
-#    - 템플릿 JSON 로드
-#    - /v1/templates, /v1/templates/{tid}
-#    - /v1/memes/{tid}/generate
 # ==========================================
 
 # 템플릿 로드
@@ -357,14 +303,11 @@ def _call_inpaint(base_bytes, mask_bytes, prompt, size):
     ...
 
 
-# 단일 base+mask 테스트용 엔드포인트 (기존 디버그용)
 @app.post("/api/meme_edit")
 async def edit_meme_image(
     prompt: str = Form(...),
     base_image: UploadFile = File(...),
     mask_image: UploadFile = File(...)
 ):
-    """
-    밈 원본(base_image)과 마스크(mask_image)를 이용해 이미지 인페인팅 수행 (테스트용).
-    """
+    """테스트용 인페인팅 엔드포인트."""
     ...

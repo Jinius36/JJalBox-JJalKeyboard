@@ -77,18 +77,16 @@ def _style_prompt_snow_night(prompt: str) -> str:
         f"사용자 설명: {prompt}"
     )
 
-def _style_prompt_pixel_art(prompt: str) -> str:
+def _style_prompt_pixel_art() -> str:
     return (
         "레트로 16비트 게임 느낌의 픽셀 아트 스타일로, "
         "도트 단위가 뚜렷하게 보이고, 단순한 형태와 제한된 색상 팔레트를 사용하는 이미지로 만들어줘. "
-        f"사용자 설명: {prompt}"
     )
 
-def _style_prompt_ac_style(prompt: str) -> str:
+def _style_prompt_ac_style() -> str:
     return (
         "‘동물의 숲’을 연상시키는 아기자기한 카툰풍 스타일로, "
         "둥글고 귀여운 비율과 파스텔톤 색감, 부드러운 그림자를 가진 장면으로 만들어줘. "
-        f"사용자 설명: {prompt}"
     )
 
 # ===========================
