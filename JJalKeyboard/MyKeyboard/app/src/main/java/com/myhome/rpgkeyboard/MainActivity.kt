@@ -39,6 +39,7 @@ class MainActivity : AppCompatActivity() {
 
     // ====== UI ======
     private lateinit var spinnerProvider: Spinner
+    private lateinit var ivGuide: ImageView         // pixel,ac guide
     private lateinit var btnPickImage: Button
     private lateinit var tvSelected: TextView
     private lateinit var etPrompt: EditText
@@ -64,7 +65,6 @@ class MainActivity : AppCompatActivity() {
 
 
     // 첨부 이미지 상태 관리
-    private val MAX_IMAGES = 4
     private val selectedImageUris = mutableListOf<Uri>()
     private lateinit var thumbAdapter: ThumbAdapter
 
@@ -87,25 +87,32 @@ class MainActivity : AppCompatActivity() {
         registerForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris: List<Uri>? ->
             selectedImageUris.clear()
 
+            // ★ 현재 provider 기준으로 max 개수 계산
+            val maxImages = if (
+                currentProvider == Provider.PIXEL_ART ||
+                currentProvider == Provider.ANIMAL_CROSSING
+            ) 1 else 4
+
             if (uris.isNullOrEmpty()) {
                 tvSelected.text = "선택된 이미지 없음"
                 rvThumbs.visibility = View.GONE
             } else {
-                if (uris.size > MAX_IMAGES) {
+                if (uris.size > maxImages) {
                     Toast.makeText(
                         this,
-                        "최대 ${MAX_IMAGES}장까지 선택됩니다. ${uris.size - MAX_IMAGES}장은 제외됩니다.",
+                        "최대 ${maxImages}장까지 선택됩니다. ${uris.size - maxImages}장은 제외됩니다.",
                         Toast.LENGTH_SHORT
                     ).show()
                 }
-                selectedImageUris.addAll(uris.take(MAX_IMAGES))
-                tvSelected.text = "총 ${selectedImageUris.size}장 선택됨 (최대 ${MAX_IMAGES}장)"
+                selectedImageUris.addAll(uris.take(maxImages))
+                tvSelected.text = "총 ${selectedImageUris.size}장 선택됨 (최대 ${maxImages}장)"
 
                 rvThumbs.visibility = View.VISIBLE
             }
 
             updateThumbs()
         }
+
 
 
     override fun onDestroy() {
@@ -120,6 +127,7 @@ class MainActivity : AppCompatActivity() {
 
         // 바인딩
         spinnerProvider = findViewById(R.id.spinnerProvider)
+        ivGuide = findViewById(R.id.ivGuide)                    // 이미지 생성 가이드
         btnPickImage = findViewById(R.id.btnPickImage)
         tvSelected = findViewById(R.id.tvSelected)
         etPrompt = findViewById(R.id.etPrompt)
@@ -137,15 +145,31 @@ class MainActivity : AppCompatActivity() {
         )
 
 
+
         spinnerProvider.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(
-                parent: AdapterView<*>, view: View?, position: Int, id: Long
-            ) {
+            override fun onItemSelected(parent: AdapterView<*>, view: View?, position: Int, id: Long) {
                 currentProvider = Provider.values()[position]
-                Log.d("IMAGE_PROVIDER", "선택: $currentProvider")
+
+                when (currentProvider) {
+                    Provider.PIXEL_ART -> {
+                        ivGuide.visibility = View.VISIBLE
+                        ivGuide.setImageResource(R.drawable.guide_pixel_art)
+                        etPrompt.visibility = View.GONE
+                    }
+                    Provider.ANIMAL_CROSSING -> {
+                        ivGuide.visibility = View.VISIBLE
+                        ivGuide.setImageResource(R.drawable.guide_ac_style)
+                        etPrompt.visibility = View.GONE
+                    }
+                    else -> {
+                        ivGuide.visibility = View.GONE
+                        etPrompt.visibility = View.VISIBLE
+                    }
+                }
             }
-            override fun onNothingSelected(parent: AdapterView<*>) { /* no-op */ }
+            override fun onNothingSelected(parent: AdapterView<*>) {}
         }
+
         // 기본값: GPT
         spinnerProvider.setSelection(0)
 
@@ -159,15 +183,39 @@ class MainActivity : AppCompatActivity() {
         rvThumbs.visibility = View.GONE                        // 처음엔 숨김
 
         btnGenerate.setOnClickListener {
-            val prompt = etPrompt.text?.toString()?.trim().orEmpty()
-            if (prompt.isBlank()) {
+            val rawPrompt = etPrompt.text?.toString()?.trim().orEmpty()
+
+            // 1) 이 provider들은 프롬프트가 필요 없음
+            val promptNeeded =
+                currentProvider != Provider.PIXEL_ART &&
+                        currentProvider != Provider.ANIMAL_CROSSING
+
+            // 2) PIXEL / AC는 이미지 1장 필수
+            val requireExactlyOneImage =
+                currentProvider == Provider.PIXEL_ART ||
+                        currentProvider == Provider.ANIMAL_CROSSING
+
+            // TODO: 다른 모드에서 4장 선택한 상태에서 모드 바꾸면 그대로 유지되는 오류 해결 필요
+
+            if (requireExactlyOneImage && selectedImageUris.size != 1) {
+                Toast.makeText(this, "이 모드는 반드시 이미지 1장을 첨부해야 합니다.", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            // 실제로 서버로 보낼 prompt (필요 없는 경우 null로 처리)
+            val effectivePrompt: String? =
+                if (promptNeeded) rawPrompt else null
+
+            if (promptNeeded && effectivePrompt.isNullOrBlank()) {
                 Toast.makeText(this, "프롬프트를 입력하세요.", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
 
-            // 여러 장을 그대로 넘긴다
-            generateImage(prompt, selectedImageUris.toList())
+            // 여러 장을 그대로 넘긴다 (PIXEL/AC일 때는 위에서 size == 1로 보장)
+            generateImage(effectivePrompt, selectedImageUris.toList())
         }
+
+
 
         btnDownload.setOnClickListener {
             resultImageBytes?.let { bytes ->
@@ -229,7 +277,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ====== 이미지 생성 ======
-    private fun generateImage(prompt: String, imageUris: List<Uri>) {
+    private fun generateImage(prompt: String?, imageUris: List<Uri>) {
         setLoading(true)
         resultImageBytes = null
         ivResult.setImageDrawable(null)
@@ -271,7 +319,7 @@ class MainActivity : AppCompatActivity() {
     private fun callProxyGenerate(
         proxyBase: String,
         provider: String,
-        prompt: String,
+        prompt: String?,       // 👈 nullable
         imageUris: List<Uri>
     ): ByteArray? {
         val url = "$proxyBase/v1/images/generate"
@@ -279,19 +327,25 @@ class MainActivity : AppCompatActivity() {
         val builder = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
             .addFormDataPart("provider", provider)
-            .addFormDataPart("prompt", prompt)
 
-        // 여러 이미지 첨부: 서버는 images: List<UploadFile>로 받음
+        // prompt가 있을 때만 form에 추가
+        if (!prompt.isNullOrBlank()) {
+            builder.addFormDataPart("prompt", prompt)
+        } else {
+            // 만약 서버에서 prompt를 필수로 Form(...) 받고 있다면,
+            // 아래 한 줄로 빈 문자열만 보내도록 바꿀 수도 있음:
+            // builder.addFormDataPart("prompt", "")
+        }
+
+        // 이하 이미지는 그대로 유지
         if (imageUris.isNotEmpty()) {
             for ((index, uri) in imageUris.withIndex()) {
 
                 val mime = contentResolver.getType(uri)
                 val bytes = readAllBytes(uri) ?: throw RuntimeException("이미지 읽기 실패")
 
-                // MIME이 없거나, 지원 포맷이 아니면 PNG로 강제 변환
                 val (finalBytes, finalMime, filename) =
                     if (mime == null || !(mime == "image/png" || mime == "image/jpeg" || mime == "image/webp")) {
-                        // 안전하게 PNG 변환
                         val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                         val bos = ByteArrayOutputStream()
                         bmp.compress(Bitmap.CompressFormat.PNG, 100, bos)
@@ -323,6 +377,7 @@ class MainActivity : AppCompatActivity() {
             return resp.body?.bytes()
         }
     }
+
 
 
 
