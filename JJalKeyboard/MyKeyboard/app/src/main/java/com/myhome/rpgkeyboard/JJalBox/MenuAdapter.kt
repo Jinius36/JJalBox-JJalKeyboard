@@ -55,12 +55,12 @@ class MenuAdapter(
                 )
             }
 
-            1 -> {
-                tv.text = ""
-                tv.setCompoundDrawablesWithIntrinsicBounds(
-                    R.drawable.ic_recent, 0, 0, 0
-                )
-            }
+//            1 -> {
+//                tv.text = ""
+//                tv.setCompoundDrawablesWithIntrinsicBounds(
+//                    R.drawable.ic_recent, 0, 0, 0
+//                )
+//            }
 
             else -> {
                 tv.text = items[position]

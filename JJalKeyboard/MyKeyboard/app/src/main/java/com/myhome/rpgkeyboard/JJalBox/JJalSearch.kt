@@ -50,8 +50,8 @@ class JJalSearch(
         val imageList: RecyclerView = view.findViewById(R.id.image_list)
 
         // b) 메뉴 세팅 (검색·최근·카테고리)
-        val categories = listOf("인기", "강호동", "HI", "최고야", "헐", "고마워", "무한도전")
-        val menuItems  = listOf("검색", "최근") + categories
+        val categories = listOf("굿모닝", "화이팅", "ㅠㅠ", "사랑해", "생일", "강호동", "무한도전")
+        val menuItems  = listOf("검색") + categories
         val initial = menuItems.indexOf("인기")  // 보통 2
 
         // c) menu_bar 레이아웃 매니저 세팅
@@ -72,7 +72,7 @@ class JJalSearch(
                         }
                         context.startActivity(intent)
                     }
-                    1 -> loadImagesFor("최신")
+//                    1 -> loadImagesFor("최신")
                     else -> loadImagesFor(item)
                 }
             },
@@ -88,7 +88,7 @@ class JJalSearch(
         }
 
         // f) 초기 “인기” 로드
-        loadImagesFor("인기")
+//        loadImagesFor("인기")
 
         // g) 브로드캐스트 리시버 등록
         ContextCompat.registerReceiver(
