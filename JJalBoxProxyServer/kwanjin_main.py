@@ -35,8 +35,6 @@ GEMINI_BASE = os.getenv("GEMINI_BASE_URL", "")
 OPENAI_IMAGE_MODEL = os.getenv("OPENAI_IMAGE_MODEL", "")
 GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "")
 
-# OpenAI 클라이언트 초기화
-client = OpenAI(api_key=OPENAI_API_KEY)
 
 # FastAPI 앱 및 CORS 설정
 app = FastAPI(title="Image Proxy")
@@ -104,9 +102,20 @@ def _openai_text2image(prompt: str) -> bytes:
     - prompt를 받아 직접 API 호출
     - 반환: raw jpeg 이미지 바이트
     """
-    img = client.images.generate( prompt=prompt, model=OPENAI_IMAGE_MODEL, n=1, output_format="jpeg" )
-    image_bytes = base64.b64decode(img.data[0].b64_json)
-    return image_bytes
+
+    # 사전 검증
+    if not OPENAI_API_KEY:
+        raise HTTPException(500, "OpenAI API key missing")
+    if not OPENAI_IMAGE_MODEL:
+        raise HTTPException(500, "OPENAI_IMAGE_MODEL is not set")
+    
+    client = OpenAI(api_key=OPENAI_API_KEY)
+
+    
+
+    resp = client.images.generate( prompt=prompt, model=OPENAI_IMAGE_MODEL, n=1, output_format="jpeg" )
+    raw_bytes = base64.b64decode(resp.data[0].b64_json)
+    return raw_bytes
 
 def _openai_text_with_refs(
     prompt: str,
@@ -163,10 +172,9 @@ async def generate_image(
 ):
     """
     엔트리 포인트:
-      1) mode 검증
-      2) provider별 동작 정의
-      3) 벤더 헬퍼 호출
-      4) bytes -> PNG로 변환 후 StreamingResponse 반환
+      1) provider별 동작 정의
+      2) 벤더 헬퍼 호출
+      3) bytes -> PNG로 변환 후 StreamingResponse 반환
     """
     try:
         # 1. provider별 동작 정의
@@ -175,19 +183,11 @@ async def generate_image(
 
         # ----- 기본 GPT provider -----
         if provider == Provider.GPT:
-            if mode == "text2image":
-                if not images:
-                    # text -> image
-                    img_bytes = _openai_text2image(prompt)
-                else:
-                    # (text + images) -> image (reference image)
-                    img_bytes = _openai_text_with_refs(prompt, images)
-            else:  # mode == "edit"
-                if not images:
-                    raise HTTPException(400, "edit mode requires at least one image")
-                base_image = images[0]
-                img_bytes = _openai_img_edit(prompt, base_image)
+            img_bytes = _openai_text2image(prompt)
+        return StreamingResponse(io.BytesIO(img_bytes), media_type="image/jpeg")
 
+    
+        """"
         # ----- 기본 Gemini provider -----
         elif provider == Provider.GEMINI:
             if mode == "text2image":
@@ -238,11 +238,7 @@ async def generate_image(
 
         else:
             raise HTTPException(400, "unsupported provider")
-
-        # 3. 공통 응답: PNG로 감싸서 반환
-        png = _png_bytes(img_bytes)
-        return StreamingResponse(io.BytesIO(png), media_type="image/png")
-
+        """
     except HTTPException:
         raise
     except Exception as e:
