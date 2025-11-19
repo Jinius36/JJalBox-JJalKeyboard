@@ -149,9 +149,8 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
-            // TODO: 여러 장 중 첫 번째 이미지만 서버로 전달
-            val firstImage = selectedImageUris.firstOrNull()
-            generateImage(prompt, firstImage)
+            // 여러 장을 그대로 넘긴다
+            generateImage(prompt, selectedImageUris.toList())
         }
 
         btnDownload.setOnClickListener {
@@ -216,7 +215,7 @@ class MainActivity : AppCompatActivity() {
 
 
 
-    private fun generateImage(prompt: String, imageUri: Uri?) {
+    private fun generateImage(prompt: String, imageUris: List<Uri>) {
         setLoading(true)
         resultImageBytes = null
         ivResult.setImageDrawable(null)
@@ -224,14 +223,16 @@ class MainActivity : AppCompatActivity() {
         ioScope.launch {
             try {
                 val providerStr = if (currentProvider == Provider.GPT) "gpt" else "gemini"
-                val mode = if (imageUri == null) "text2image" else "edit"
+                val hasImages = imageUris.isNotEmpty()
+                val mode = "text2image"   // 이제 항상 text2image로 두고, hasImages는 서버가 해석
+
                 val bytes = callProxyGenerate(
                     proxyBase = PROXY_BASE_URL,
                     provider = providerStr,
                     mode = mode,
                     prompt = prompt,
                     size = "1024x1024",
-                    imageUri = imageUri
+                    imageUris = imageUris      // <-- 리스트
                 )
 
                 if (bytes == null) throw RuntimeException("빈 응답")
@@ -244,12 +245,9 @@ class MainActivity : AppCompatActivity() {
                     setLoading(false)
                 }
             } catch (e: Exception) {
-//                val tag = if (currentProvider == Provider.GPT) TAG_GPT else TAG_GEMINI
-//                Log.e(tag, "이미지 생성 실패", e)
                 Log.e(TAG_PROXY, "이미지 생성 실패", e)
                 mainScope.launch { setLoading(false) }
             }
-
         }
     }
 
@@ -274,7 +272,7 @@ class MainActivity : AppCompatActivity() {
         mode: String,
         prompt: String,
         size: String,
-        imageUri: Uri?
+        imageUris: List<Uri>   // 여러 장
     ): ByteArray? {
         val url = "$proxyBase/v1/images/generate"
 
@@ -284,30 +282,32 @@ class MainActivity : AppCompatActivity() {
             .addFormDataPart("prompt", prompt)
             .addFormDataPart("size", size)
 
-        if (imageUri != null) {
-            // MIME 추출 (없으면 PNG로 변환)
-            val mime = contentResolver.getType(imageUri)
-            val bytes = readAllBytes(imageUri) ?: throw RuntimeException("이미지 읽기 실패")
+        // 여러 이미지 첨부: 필드 이름은 서버 쪽과 맞추기 (예: "images")
+        if (imageUris.isNotEmpty()) {
+            for ((index, uri) in imageUris.withIndex()) {
+                val mime = contentResolver.getType(uri)
+                val bytes = readAllBytes(uri) ?: throw RuntimeException("이미지 읽기 실패")
 
-            val (finalBytes, finalMime, filename) =
-                if (mime == null || !(mime == "image/png" || mime == "image/jpeg" || mime == "image/webp")) {
-                    // 안전하게 PNG로 변환
-                    val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                    val bos = ByteArrayOutputStream()
-                    bmp.compress(Bitmap.CompressFormat.PNG, 100, bos)
-                    Triple(bos.toByteArray(), "image/png", "input.png")
-                } else {
-                    // 원래 MIME 사용
-                    val ext = when (mime) {
-                        "image/jpeg" -> "jpg"
-                        "image/webp" -> "webp"
-                        else -> "png"
+                val (finalBytes, finalMime, filename) =
+                    if (mime == null || !(mime == "image/png" || mime == "image/jpeg" || mime == "image/webp")) {
+                        // 안전하게 PNG 변환
+                        val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                        val bos = ByteArrayOutputStream()
+                        bmp.compress(Bitmap.CompressFormat.PNG, 100, bos)
+                        Triple(bos.toByteArray(), "image/png", "input_$index.png")
+                    } else {
+                        val ext = when (mime) {
+                            "image/jpeg" -> "jpg"
+                            "image/webp" -> "webp"
+                            else -> "png"
+                        }
+                        Triple(bytes, mime, "input_$index.$ext")
                     }
-                    Triple(bytes, mime, "input.$ext")
-                }
 
-            val rb = finalBytes.toRequestBody(finalMime.toMediaTypeOrNull())
-            builder.addFormDataPart("image", filename, rb)
+                val rb = finalBytes.toRequestBody(finalMime.toMediaTypeOrNull())
+                // ★ 서버에서 images: list[UploadFile]로 받을 예정이므로 필드 이름 "images"
+                builder.addFormDataPart("images", filename, rb)
+            }
         }
 
         val request = Request.Builder()
