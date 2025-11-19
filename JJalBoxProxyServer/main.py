@@ -1,8 +1,46 @@
 # main.py
 # 실행: uvicorn main:app --host 0.0.0.0 --port 8000
 
-# enum 정의
+# ==========================================
+# 1. Enum / Import / 환경 변수 로딩
+# ==========================================
 from enum import Enum
+from typing import Optional, List, Any
+
+import os, base64, io
+import requests
+from openai import OpenAI
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from dotenv import load_dotenv
+from PIL import Image, ImageDraw, ImageFont
+import json
+
+# 디버깅
+import logging
+
+logger = logging.getLogger("image_debug")
+logging.basicConfig(level=logging.INFO)
+
+def _debug_log_images(tag: str, images: list[UploadFile] | None):
+    """
+    업로드된 images 리스트 상태를 로그로 찍어보는 디버그 함수.
+    """
+    if not images:
+        logger.info(f"[{tag}] images is None or empty")
+        return
+
+    logger.info(f"[{tag}] images count = {len(images)}")
+    for idx, upload in enumerate(images):
+        logger.info(
+            f"[{tag}] image[{idx}]: "
+            f"filename={upload.filename!r}, "
+            f"content_type={upload.content_type!r}"
+        )
+
+
+# Provider 선택 (프론트 enum과 동일)
 class Provider(str, Enum):
     GPT = "gpt"
     GEMINI = "gemini"
@@ -11,402 +49,417 @@ class Provider(str, Enum):
     PIXEL_ART = "pixel_art"
     AC_STYLE = "ac_style"
 
-import os, base64, io, time
-from typing import Optional
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, JSONResponse
-import requests
-from PIL import Image
-from dotenv import load_dotenv
-from PIL import ImageDraw, ImageFont
-import json
-from io import BytesIO
-from typing import Optional, List, Any
-
+# 환경 변수 로딩
 load_dotenv(os.getenv("ENV_PATH"))
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 OPENAI_BASE = os.getenv("OPENAI_BASE_URL", "")
 GEMINI_BASE = os.getenv("GEMINI_BASE_URL", "")
-
-# 모델명은 환경변수로 주입 권장
 OPENAI_IMAGE_MODEL = os.getenv("OPENAI_IMAGE_MODEL", "")
 GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "")
 
+
+# FastAPI 앱 및 CORS 설정
 app = FastAPI(title="Image Proxy")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 배포 시 도메인 제한 권장
+    allow_origins=["*"],          # TODO: 배포 시 도메인 제한
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+
+# ==========================================
+# 2. 공통 유틸 함수
+# ==========================================
+
 def _png_bytes(img_bytes: bytes) -> bytes:
-    """임의 포맷 바이트를 PNG로 변환(일관성 보장). 실패 시 원본 반환."""
+    """
+    임의 포맷 바이트를 PNG로 변환(일관성 보장).
+    변환 실패 시 원본 바이트 그대로 반환.
+    """
     try:
-        im = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
+        # 1) 이미지 열기
+        im = Image.open(io.BytesIO(img_bytes))
+
+        # 2) RGBA 사용 → 투명도 포함 PNG 출력을 항상 보장
+        im = im.convert("RGBA")
+
+        # 3) PNG로 저장
         out = io.BytesIO()
         im.save(out, format="PNG")
         return out.getvalue()
-    except Exception:
+
+    except Exception as e:
+        # 변환 실패 시 원본 그대로
+        # (예: 이미지가 아니거나 손상된 경우)
         return img_bytes
 
-def _http_err(resp: requests.Response):
-    try:
-        detail = resp.text[:800]
-    except Exception:
-        detail = f"status={resp.status_code}"
-    raise HTTPException(status_code=resp.status_code, detail=detail)
+def _normalize_upload_image(upload: UploadFile):
+    """
+    업로드된 이미지를 읽어서:
+      - 지원하지 않는 포맷이면 PNG로 변환
+      - (바이트, mime, filename) 튜플로 반환
+    """
+    ...
 
-# ===========================
-# 스타일 프롬프트 헬퍼
-# ===========================
+def _http_err_from_requests(resp: requests.Response):
+    """requests.Response를 HTTPException으로 변환 (디버그용 에러 메시지 포함)."""
+    ...
+
+
+# ==========================================
+# 3. 스타일 프롬프트 헬퍼
+#    (Provider별 스타일 설명을 프롬프트에 얹는 역할)
+# ==========================================
+
 def _style_prompt_meme_galteya(prompt: str) -> str:
-    return (
-        "‘갈테야테야’ 밈 스타일의 한국 인터넷 짤 이미지를 만들어줘. "
-        "과장된 표정과 상황, 대사를 넣을 수 있는 여백이 있는 구성으로, "
-        "카카오톡/메신저에서 공유하기 좋은 정사각형 밈 느낌으로. "
-        f"사용자 설명: {prompt}"
-    )
+    """갈테야테야 밈 스타일용 프롬프트 래핑."""
+    ...
 
 def _style_prompt_snow_night(prompt: str) -> str:
-    return (
-        "눈 내리는 겨울밤의 감성적인 일러스트 스타일로, "
-        "따뜻한 조명과 눈발, 파란 밤하늘과 조용한 거리 분위기를 강조해서 표현해줘. "
-        f"사용자 설명: {prompt}"
+    """눈 내리는 밤 일러스트 스타일용 프롬프트 래핑."""
+    ...
+
+def _style_prompt_pixel_art(prompt: str) -> str:
+    """픽셀 아트(16비트 게임) 스타일용 프롬프트 래핑."""
+    ...
+
+def _style_prompt_ac_style(prompt: str) -> str:
+    """동물의 숲풍 카툰 스타일용 프롬프트 래핑."""
+    ...
+
+
+# ==========================================
+# 4. 벤더 호출 함수 (실제 OpenAI/Gemini API 호출)
+#    여기서는 "bytes"만 반환하고, Response는 엔드포인트에서 만든다.
+# ==========================================
+
+# ---------- 4-1. OpenAI / GPT-Image-1 계열 ----------
+
+# GPT-Image-1 text2image 함수
+def _openai_text2image(prompt: str) -> bytes:
+    """
+    GPT-Image-1 text -> image
+    - prompt를 받아 직접 API 호출
+    - 반환: raw jpeg 이미지 바이트
+    """
+
+    # 사전 검증
+    if not OPENAI_API_KEY:
+        raise HTTPException(500, "OpenAI API key missing")
+    if not OPENAI_IMAGE_MODEL:
+        raise HTTPException(500, "OPENAI_IMAGE_MODEL is not set")
+    
+    client = OpenAI(api_key=OPENAI_API_KEY)
+
+    resp = client.images.generate(
+        prompt=prompt, 
+        model=OPENAI_IMAGE_MODEL, 
+        n=1,
+        size="1024x1024",
+        output_format="jpeg" )
+    
+    raw_bytes = base64.b64decode(resp.data[0].b64_json)
+    return raw_bytes
+
+# GPT-Image-1 text + reference images 함수
+def _openai_text_with_refs(
+    prompt: str,
+    images: List[UploadFile],
+) -> bytes:
+    """
+    GPT-Image-1 text + reference images -> image
+    - 업로드된 이미지를 참조로 쓰는 text2image
+    """
+    # 사전 검증
+    if not OPENAI_API_KEY:
+        raise HTTPException(500, "OpenAI API key missing")
+    if not OPENAI_IMAGE_MODEL:
+        raise HTTPException(500, "OPENAI_IMAGE_MODEL is not set")
+    if not images or len(images) == 0:
+        raise HTTPException(400, "No reference images provided")
+    
+    client = OpenAI(api_key=OPENAI_API_KEY)
+
+    # UploadFile → file-like objects 준비
+    file_objs = []
+    for upload in images:
+        raw = upload.file.read()
+        fixed = _png_bytes(raw)
+        bio = io.BytesIO(fixed)
+        bio.name = upload.filename or "ref.png"
+        file_objs.append(bio)
+
+    resp = client.images.edit(
+        model = OPENAI_IMAGE_MODEL,
+        image = file_objs,             # 리스트 of file-like
+        size="1024x1024",
+        prompt = prompt,
+        n = 1,
     )
 
-def _style_prompt_pixel_art() -> str:
-    return (
-        "레트로 16비트 게임 느낌의 픽셀 아트 스타일로, "
-        "도트 단위가 뚜렷하게 보이고, 단순한 형태와 제한된 색상 팔레트를 사용하는 이미지로 만들어줘. "
+    raw_bytes = base64.b64decode(resp.data[0].b64_json)
+    return raw_bytes
+
+# GPT-Image-1 스티커 PNG 용 함수
+def _openai_text_with_refs_transparent(
+    prompt: str,
+    images: List[UploadFile],
+) -> bytes:
+    """
+    GPT-Image-1 text + reference images -> image
+    - 업로드된 이미지를 참조로 쓰는 text2image
+    - 투명 배경 PNG 생성용
+    """
+    # 사전 검증
+    if not OPENAI_API_KEY:
+        raise HTTPException(500, "OpenAI API key missing")
+    if not OPENAI_IMAGE_MODEL:
+        raise HTTPException(500, "OPENAI_IMAGE_MODEL is not set")
+    if not images or len(images) == 0:
+        raise HTTPException(400, "No reference images provided")
+    
+    client = OpenAI(api_key=OPENAI_API_KEY)
+
+    # UploadFile → file-like objects 준비
+    file_objs = []
+    for upload in images:
+        raw = upload.file.read()
+        fixed = _png_bytes(raw)
+        bio = io.BytesIO(fixed)
+        bio.name = upload.filename or "ref.png"
+        file_objs.append(bio)
+
+    resp = client.images.edit(
+        model = OPENAI_IMAGE_MODEL,
+        image = file_objs,             # 리스트 of file-like
+        size="1024x1024",
+        prompt = prompt,
+        n = 1,
+        background="transparent",
+        output_format="png",
     )
 
-def _style_prompt_ac_style() -> str:
-    return (
-        "‘동물의 숲’을 연상시키는 아기자기한 카툰풍 스타일로, "
-        "둥글고 귀여운 비율과 파스텔톤 색감, 부드러운 그림자를 가진 장면으로 만들어줘. "
+    raw_bytes = base64.b64decode(resp.data[0].b64_json)
+    return raw_bytes
+
+def _openai_img_edit(
+    prompt: str,
+    base_image: UploadFile,
+    mask_image: Optional[UploadFile] = None,
+) -> bytes:
+    """
+    GPT-Image-1 기반 이미지 편집(inpainting) 함수.
+    - base_image: 수정할 원본 이미지
+    - mask_image: 편집할 영역을 알리는 마스크 이미지 (투명 혹은 알파 채널이 있는 PNG 형태 권장)
+      만약 mask_image가 None이면, base_image 전체가 편집 대상이 됨.
+    - size: "1024x1024" 등
+    - 반환값: 편집된 이미지의 raw 바이트 (PNG로 통일 가능)
+    """
+    # 사전 검증
+    if not OPENAI_API_KEY:
+        raise HTTPException(500, "OpenAI API key missing")
+    if not OPENAI_IMAGE_MODEL:
+        raise HTTPException(500, "OPENAI_IMAGE_MODEL is not set")
+    
+    client = OpenAI(api_key=OPENAI_API_KEY)
+
+    # base 이미지 읽기 및 필요 시 PNG 변환
+    base_bytes = base_image.file.read()
+    base_bytes = _png_bytes(base_bytes)  # PNG로 통일
+
+    # 마스크 이미지가 주어진 경우 처리
+    mask_bytes = None
+    if mask_image is not None:
+        mask_bytes = mask_image.file.read()
+        mask_bytes = _png_bytes(mask_bytes)  # PNG로 통일
+
+    # OpenAI API 호출 준비
+    # SDK 방식: client.images.edit(...)
+    # https://platform.openai.com/docs/guides/image-generation?image-generation-model=gpt-image-1&api=image#edit-an-image-using-a-mask-inpainting
+    resp = client.images.edit(
+        model=OPENAI_IMAGE_MODEL,
+        image=io.BytesIO(base_bytes),        # file-like object
+        mask=io.BytesIO(mask_bytes) if mask_bytes is not None else None,
+        prompt=prompt,
+        size="1024x1024",
+        n=1,
+        response_format="b64_json",
     )
 
-# ===========================
-# 이미지 생성 엔드포인트
-# ===========================
+    # 결과 처리
+    b64 = resp.data[0].b64_json
+    raw = base64.b64decode(b64)
+    return _png_bytes(raw)
+
+
+# ---------- 4-2. Gemini 계열 (나중에 구현) ----------
+
+def _gemini_text2image(
+    prompt: str,
+) -> bytes:
+    """
+    Gemini text -> image (참조 이미지 선택적)
+    """
+    ...
+
+def _gemini_img2img(
+    prompt: str,
+    images: List[UploadFile],
+) -> bytes:
+    """
+    Gemini image -> image
+    """
+    ...
+
+
+# ==========================================
+# 5. 이미지 생성 엔드포인트 (+ provider별 분기까지 한 곳에서 처리)
+# ==========================================
 
 @app.post("/v1/images/generate")
 async def generate_image(
     provider: Provider = Form(...),
-    mode: str = Form(...),               # "text2image" | "edit"
     prompt: str = Form(...),
-    size: str = Form("1024x1024"),
     images: Optional[List[UploadFile]] = File(None),
 ):
+    """
+    엔트리 포인트:
+      1) provider별 동작 정의
+      2) 벤더 헬퍼 호출
+      3) provider별로 JPEG/PNG로 바로 응답
+    """
     try:
-        if provider not in Provider.__members__.values():
-            raise HTTPException(400, "unsupported provider")
-        if mode not in ("text2image", "edit"):
-            raise HTTPException(400, "mode must be 'text2image' or 'edit'")
+        # ---------------------------------
+        # 1. provider별로 img_bytes + media_type 결정
+        # ---------------------------------
 
-        # edit 모드에서는 최소 1개 필요 (기존 호환성 유지)
-        if mode == "edit" and (not images or len(images) == 0):
-            raise HTTPException(400, "at least one image is required for edit mode")
+        # ----- 기본 GPT provider (JPEG) -----
+        if provider == Provider.GPT:
+            if not images:
+                logger.info("[generate_image] GPT text2image (no refs)")
+                img_bytes = _openai_text2image(prompt)              # JPEG 생성 가정
+            else:
+                logger.info(f"[generate_image] GPT text2image with refs (count={len(images)})")
+                img_bytes = _openai_text_with_refs(prompt, images)  # JPEG 생성 가정
+            media_type = "image/jpeg"
 
-        if provider == "gpt":
-            return _handle_gpt(mode, prompt, size, images)
+        
+        # ----- 기본 Gemini provider (JPEG) -----
+        elif provider == Provider.GEMINI:
+            # 구현 방식은 네가 정한 헬퍼에 맞춰서:
+            # 예: text + optional refs -> img
+            img_bytes = _gemini_text2image(prompt, images)          # JPEG 생성 가정
+            media_type = "image/jpeg"
+
+        # ----- 갈테야 밈 (JPEG) -----
+        elif provider == Provider.MEME_GALTEYA:
+            styled = _style_prompt_meme_galteya(prompt)
+            if not images:
+                logger.info("[generate_image] MEME_GALTEYA text2image (no refs)")
+                img_bytes = _openai_text2image(styled)              # JPEG
+            else:
+                logger.info(f"[generate_image] MEME_GALTEYA with refs (count={len(images)})")
+                img_bytes = _openai_text_with_refs(styled, images)  # JPEG
+            media_type = "image/jpeg"
+
+        # ----- 눈 내리는 밤 (Gemini img2img, JPEG) -----
+        elif provider == Provider.SNOW_NIGHT:
+            if not images:
+                raise HTTPException(400, "snow_night requires at least one image")
+            styled = _style_prompt_snow_night(prompt)
+            img_bytes = _gemini_img2img(styled, images)             # JPEG 생성 가정
+            media_type = "image/jpeg"
+
+        # ----- 픽셀 아트 스티커 (PNG + transparent) -----
+        elif provider == Provider.PIXEL_ART:
+            if not images:
+                raise HTTPException(400, "pixel_art requires at least one image")
+            styled = _style_prompt_pixel_art(prompt)
+            img_bytes = _openai_text_with_refs_transparent(styled, images)      # PNG + 투명 배경 생성
+            media_type = "image/png"
+
+        # ----- 동물의 숲 스타일 스티커 (PNG + transparent) -----
+        elif provider == Provider.AC_STYLE:
+            if not images:
+                raise HTTPException(400, "ac_style requires at least one image")
+            styled = _style_prompt_ac_style(prompt)
+            img_bytes = _openai_text_with_refs_transparent(styled, images)      # PNG + 투명 배경 생성
+            media_type = "image/png"
+
         else:
-            return _handle_gemini(mode, prompt, size, images)
+            raise HTTPException(400, "unsupported provider")
+        
 
+        # ---------------------------------
+        # 2. 최종 응답
+        #    - JPEG 계열은 헬퍼에서 이미 JPEG로 만들어준다
+        #    - PNG 계열은 헬퍼에서 투명 배경 PNG로 만들어준다
+        # ---------------------------------
+        return StreamingResponse(io.BytesIO(img_bytes), media_type=media_type)
+        
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-def _normalize_upload_image(upload: UploadFile):
-    img_bytes = upload.file.read()
-    mime = (upload.content_type or "").lower()
-    if mime not in ("image/jpeg", "image/png", "image/webp"):
-        # PNG로 변환
-        im = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
-        buf = io.BytesIO()
-        im.save(buf, format="PNG")
-        img_bytes = buf.getvalue()
-        mime = "image/png"
-        filename = "input.png"
-    else:
-        ext = ".jpg" if mime == "image/jpeg" else ".png" if mime == "image/png" else ".webp"
-        filename = f"input{ext}"
-    return img_bytes, mime, filename
 
-def _handle_gpt(mode: str, prompt: str, size: str, images: Optional[List[UploadFile]]):
-    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
-    if not OPENAI_API_KEY:
-        raise HTTPException(500, "OpenAI key missing")
-
-    if mode == "text2image":
-        # 1) 이미지가 없으면: 기존 JSON 기반 text2image
-        if not images:
-            url = f"{OPENAI_BASE}/images/generations"
-            payload = {"model": OPENAI_IMAGE_MODEL, "prompt": prompt, "size": size}
-            r = requests.post(url, json=payload, headers=headers, timeout=90)
-
-        # 2) 이미지가 있으면: "텍스트 + 참고 이미지들" (image reference)
-        else:
-            url = f"{OPENAI_BASE}/images/generations"
-            files = [
-                ("model", (None, OPENAI_IMAGE_MODEL)),
-                ("prompt", (None, prompt)),
-                ("size", (None, size)),
-            ]
-            for upload in images:
-                img_bytes, mime, filename = _normalize_upload_image(upload)
-                # 공식 문서는 image[] 형식으로 예시 (참고 링크 기준)
-                files.append(("image[]", (filename, img_bytes, mime)))
-
-            r = requests.post(url, files=files, headers=headers, timeout=90)
-
-    else:
-        # 기존 edit 로직 유지, 첫 번째 이미지만 base로 사용
-        if not images:
-            raise HTTPException(400, "image is required for edit mode")
-
-        base_upload = images[0]
-        img_bytes, mime, filename = _normalize_upload_image(base_upload)
-
-        url = f"{OPENAI_BASE}/images/edits"
-        files = {
-            "model": (None, OPENAI_IMAGE_MODEL),
-            "prompt": (None, prompt),
-            "size": (None, size),
-            "image": (filename, img_bytes, mime),
-        }
-        r = requests.post(url, files=files, headers=headers, timeout=90)
-
-    if r.status_code // 100 != 2:
-        _http_err(r)
-
-    data0 = r.json()["data"][0]
-    # url 우선, 없으면 b64_json
-    if "url" in data0 and data0["url"]:
-        img_resp = requests.get(data0["url"], timeout=90)
-        if img_resp.status_code // 100 != 2:
-            _http_err(img_resp)
-        png = _png_bytes(img_resp.content)
-    else:
-        b64 = data0.get("b64_json")
-        if not b64:
-            raise HTTPException(502, "OpenAI response has no url/b64_json")
-        raw = base64.b64decode(b64)
-        png = _png_bytes(raw)
-
-    return StreamingResponse(io.BytesIO(png), media_type="image/png")
-
-def _handle_gemini(mode: str, prompt: str, size: str, images: Optional[List[UploadFile]]):
-    if not GEMINI_API_KEY:
-        raise HTTPException(500, "Gemini key missing")
-
-    url = f"{GEMINI_BASE}/models/{GEMINI_IMAGE_MODEL}:generateContent"
-    headers = {"x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json"}
-
-    parts: list[dict[str, Any]] = []
-    parts.append({"text": prompt})
-
-    if mode == "text2image":
-        # 여러 이미지를 "참조"로 넣기
-        if images:
-            for upload in images:
-                img_b = upload.file.read()
-                b64 = base64.b64encode(img_b).decode("utf-8")
-                parts.append({
-                    "inlineData": {
-                        "mimeType": "image/png",   # 필요하면 MIME 추론해서 넣어도 됨
-                        "data": b64
-                    }
-                })
-        body = {
-            "contents": [{"parts": parts}],
-            # 보통 이미지 생성용으로는 response_mime_type도 설정하는 게 권장
-            # "generationConfig": {"response_mime_type": "image/png"}
-        }
-
-    else:  # edit 모드 (기존 호환)
-        if not images:
-            raise HTTPException(400, "image is required for edit mode")
-        img_b = images[0].file.read()
-        b64 = base64.b64encode(img_b).decode("utf-8")
-        parts.append({
-            "inlineData": {
-                "mimeType": "image/png",
-                "data": b64
-            }
-        })
-        body = {
-            "contents": [{"parts": parts}],
-            # "generationConfig": {"response_mime_type": "image/png"}
-        }
-
-    r = requests.post(url, json=body, headers=headers, timeout=90)
-    if r.status_code // 100 != 2:
-        _http_err(r)
-
-    resp = r.json()
-    try:
-        parts = resp["candidates"][0]["content"]["parts"]
-    except Exception:
-        raise HTTPException(502, "Gemini response missing candidates/content/parts")
-
-    # 첫 inlineData 찾기
-    raw = None
-    for p in parts:
-        blob = p.get("inline_data") or p.get("inlineData")
-        if blob and blob.get("data"):
-            raw = base64.b64decode(blob["data"])
-            break
-    if raw is None:
-        raise HTTPException(502, "Gemini response has no image data")
-
-    png = _png_bytes(raw)
-    return StreamingResponse(io.BytesIO(png), media_type="image/png")
-
-# ===========================
-# Meme Template Based Feature
-# ===========================
+# ==========================================
+# 7. Meme Template Based Feature (기존 기능)
+# ==========================================
 
 # 템플릿 로드
-with open("templates/galteya.json", "r", encoding="utf-8") as f:
-    TEMPLATE_GALTEYA = json.load(f)
-
+# with open("templates/galteya.json", "r", encoding="utf-8") as f:
+#     TEMPLATE_GALTEYA = json.load(f)
 
 @app.get("/v1/templates")
 def list_templates():
-    """템플릿 목록"""
-    return [TEMPLATE_GALTEYA]
-
+    """템플릿 목록 조회."""
+    ...
 
 @app.get("/v1/templates/{tid}")
 def get_template(tid: str):
-    if tid == "meme_galteya":
-        return TEMPLATE_GALTEYA
-    raise HTTPException(404, "template not found")
-
+    """특정 템플릿 상세 조회."""
+    ...
 
 @app.post("/v1/memes/{tid}/generate")
-async def generate_meme(tid: str, inputs: str = Form(...), files: list[UploadFile] = File(None)):
-    tpl = TEMPLATE_GALTEYA if tid == "meme_galteya" else None
-    if not tpl:
-        raise HTTPException(404, "template not found")
-
-    try:
-        inputs = json.loads(inputs)
-    except Exception:
-        raise HTTPException(400, "invalid inputs JSON")
-
-    # base 이미지
-    base = Image.open(requests.get(tpl["base_url"], stream=True).raw).convert("RGBA")
-
-    # 텍스트 슬롯 합성
-    for s in tpl["slots"]:
-        if s.get("type") == "text" and s.get("render_text_on_server"):
-            val = inputs.get(s["id"])
-            if val:
-                _draw_text(base, val, s["bbox"], s["font"])
-
-    # inpaint용 마스크 수집
-    masks = []
-    prompt_parts = [tpl["prompt_global"]]
-    for s in tpl["slots"]:
-        if s.get("inpaint") or s.get("type") == "image":
-            mask_url = s["mask_url"]
-            m = Image.open(requests.get(mask_url, stream=True).raw).convert("RGBA")
-            masks.append(m)
-            val = inputs.get(s["id"]) or ""
-            prompt_parts.append(s["prompt_slot"].replace("{{text}}", val))
-
-    if not masks:
-        buf = io.BytesIO()
-        base.save(buf, format="PNG")
-        return StreamingResponse(io.BytesIO(buf.getvalue()), media_type="image/png")
-
-    mask = _merge_masks(masks, base.size)
-
-    buf_base, buf_mask = io.BytesIO(), io.BytesIO()
-    base.save(buf_base, format="PNG")
-    mask.save(buf_mask, format="PNG")
-
-    prompt = " ".join(prompt_parts)
-    out_bytes = _call_inpaint(buf_base.getvalue(), buf_mask.getvalue(), prompt, tpl["size"])
-    return StreamingResponse(io.BytesIO(out_bytes), media_type="image/png")
+async def generate_meme(
+    tid: str,
+    inputs: str = Form(...),
+    files: List[UploadFile] = File(None),
+):
+    """
+    템플릿 기반 밈 이미지 생성:
+      - base_url 이미지를 가져와,
+      - slots 정보에 따라 텍스트 합성,
+      - inpaint 영역(mask) 모아서 _call_inpaint로 OpenAI 이미지 편집 요청.
+    """
+    ...
 
 
-# --------- 내부 함수 ---------
+# ==========================================
+# 8. 템플릿/인페인팅 내부 유틸
+# ==========================================
 
 def _draw_text(img, text, bbox, font_spec):
-    x1, y1, x2, y2 = bbox
-    w, h = x2 - x1, y2 - y1
-    font = ImageFont.truetype("/fonts/NotoSansKR-Bold.ttf", font_spec["size"])
-    draw = ImageDraw.Draw(img)
-    tw, th = draw.textlength(text, font=font), font.size
-    tx = x1 + (w - tw)//2 if font_spec.get("align") == "center" else x1
-    ty = y1 + (h - th)//2
-    draw.text((tx, ty), text, fill=(0, 0, 0, 255), font=font)
+    """지정된 bbox 영역에 텍스트를 렌더링."""
+    ...
+
+def _merge_masks(mask_images):
+    """여러 개의 마스크 이미지를 하나로 합성."""
+    ...
+
+def _call_inpaint(base_bytes, mask_bytes, prompt):
+    """OpenAI /images/edits로 인페인팅 호출."""
+    ...
 
 
-def _merge_masks(mask_images, size):
-    base = Image.new("RGBA", size, (255, 255, 255, 255))
-    for m in mask_images:
-        base = Image.alpha_composite(base, m)
-    return base
-
-
-def _call_inpaint(base_bytes, mask_bytes, prompt, size):
-    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
-    files = {
-        "model": (None, OPENAI_IMAGE_MODEL),
-        "prompt": (None, prompt),
-        "size": (None, size),
-        "image": ("base.png", base_bytes, "image/png"),
-        "mask": ("mask.png", mask_bytes, "image/png"),
-    }
-    r = requests.post(f"{OPENAI_BASE}/images/edits", files=files, headers=headers, timeout=90)
-    if r.status_code // 100 != 2:
-        _http_err(r)
-    data = r.json()["data"][0]
-    if "b64_json" in data:
-        return base64.b64decode(data["b64_json"])
-    elif "url" in data:
-        resp = requests.get(data["url"], timeout=60)
-        return resp.content
-    raise HTTPException(502, "no image data in response")
-
-# 단일 base+mask 테스트용
 @app.post("/api/meme_edit")
 async def edit_meme_image(
     prompt: str = Form(...),
     base_image: UploadFile = File(...),
     mask_image: UploadFile = File(...)
 ):
-    """
-    밈 원본(base_image)과 마스크(mask_image)를 이용해 이미지 인페인팅 수행
-    """
-    files = {
-        "image": (base_image.filename, await base_image.read(), "image/png"),
-        "mask": (mask_image.filename, await mask_image.read(), "image/png"),
-    }
-
-    data = {
-        "model": "gpt-image-1",
-        "prompt": prompt,
-        "size": "1024x1024"
-    }
-
-    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
-    response = requests.post(
-        f"{OPENAI_BASE}/images/edits", headers=headers, data=data, files=files, timeout=90
-    )
-
-    if response.status_code // 100 != 2:
-        # 디버그에 도움 되도록 OpenAI 에러 바디를 그대로 노출
-        raise HTTPException(status_code=502, detail=response.text)
-
-    result = response.json()
-    image_b64 = result["data"][0]["b64_json"]
-    return {"image_base64": image_b64}
+    """테스트용 인페인팅 엔드포인트."""
+    ...
