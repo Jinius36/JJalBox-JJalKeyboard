@@ -163,17 +163,20 @@ class MainActivity : AppCompatActivity() {
                         ivGuide.visibility = View.VISIBLE
                         ivGuide.setImageResource(R.drawable.guide_pixel_art)
                         etPrompt.visibility = View.GONE
+                        btnReverse.visibility = View.GONE
                     }
 
                     Provider.ANIMAL_CROSSING -> {
                         ivGuide.visibility = View.VISIBLE
                         ivGuide.setImageResource(R.drawable.guide_ac_style)
                         etPrompt.visibility = View.GONE
+                        btnReverse.visibility = View.GONE
                     }
 
                     else -> {
                         ivGuide.visibility = View.GONE
                         etPrompt.visibility = View.VISIBLE
+                        btnReverse.visibility = View.GONE
                     }
                 }
             }
