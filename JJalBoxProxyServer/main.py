@@ -58,7 +58,6 @@ GEMINI_BASE = os.getenv("GEMINI_BASE_URL", "")
 OPENAI_IMAGE_MODEL = os.getenv("OPENAI_IMAGE_MODEL", "")
 GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "")
 
-
 # FastAPI 앱 및 CORS 설정
 app = FastAPI(title="Image Proxy")
 app.add_middleware(
@@ -121,13 +120,26 @@ def _style_prompt_snow_night(prompt: str) -> str:
     """눈 내리는 밤 일러스트 스타일용 프롬프트 래핑."""
     ...
 
-def _style_prompt_pixel_art(prompt: str) -> str:
-    """픽셀 아트(16비트 게임) 스타일용 프롬프트 래핑."""
-    ...
+def _style_prompt_pixel_art() -> str:
+    return (
+        "Study the pixel art style of Everskies, and imitate the way it depicts body shape, facial features and expressions, clothing, and hairstyle. "
+        "Using the hairstyle, outfit, and accessories of the person in the attached image, create a full-body character illustration. "
+        "The background should be transparent (PNG), and only the complete character should be included. "
+        "The character should be full size and must not be cropped or cut off at the top or bottom (there should be a slight gap). "
+        "Also, white-colored areas in the character (such as eyes, dress, etc.) should not be transparent — they should be filled with actual white color."
+    )
 
-def _style_prompt_ac_style(prompt: str) -> str:
-    """동물의 숲풍 카툰 스타일용 프롬프트 래핑."""
-    ...
+def _style_prompt_ac_style() -> str:
+    return (
+        "Study the 3D character illustration style of the Nintendo Switch game Animal Crossing, "
+        "and follow its way of depicting facial features, clothing, and hairstyles. Using that style, "
+        "draw an illustration of the person in the attached image, replicating their hairstyle and clothing "
+        "accessories. Make the background transparent, and create a warm and lively atmosphere by using "
+        "bright sunlight and soft shadows under natural light. The character should look like one that appears "
+        "in an actual Animal Crossing gameplay screen. Make sure the 3D aspect is clearly shown."
+    )
+
+
 
 
 # ==========================================
@@ -296,22 +308,42 @@ def _openai_img_edit(
 
 # ---------- 4-2. Gemini 계열 (나중에 구현) ----------
 
-def _gemini_text2image(
-    prompt: str,
-) -> bytes:
+def _gemini_text2image(prompt: str, images: Optional[List[UploadFile]]) -> bytes:
     """
-    Gemini text -> image (참조 이미지 선택적)
+    Gemini text -> image
     """
-    ...
 
-def _gemini_img2img(
-    prompt: str,
-    images: List[UploadFile],
-) -> bytes:
-    """
-    Gemini image -> image
-    """
-    ...
+    # 사전 검증
+    if not GEMINI_API_KEY:
+        raise HTTPException(500, "Gemini API key missing")
+    if not GEMINI_IMAGE_MODEL:
+        raise HTTPException(500, "GEMINI_IMAGE_MODEL is not set")
+
+    client = genai.Client(api_key=GEMINI_API_KEY)
+
+    contents = [prompt]
+    if images:
+        for image in images:
+            img_b = image.file.read()
+            b64 = base64.b64encode(img_b).decode("utf-8")
+            contents.append({
+                "inlineData": {
+                    "mimeType": "image/png",
+                    "data": b64
+                }
+            })
+
+    resp = client.models.generate_content(
+        model=GEMINI_IMAGE_MODEL,
+        contents=contents
+    )
+
+    for part in resp.parts:
+        if part.text is not None:
+            print(part.text)
+        elif part.inline_data is not None:
+            raw_bytes = part.inline_data.data
+            return raw_bytes
 
 
 # ==========================================
@@ -346,11 +378,9 @@ async def generate_image(
             media_type = "image/jpeg"
 
         
-        # ----- 기본 Gemini provider (JPEG) -----
+        # ----- 기본 Gemini provider -----
         elif provider == Provider.GEMINI:
-            # 구현 방식은 네가 정한 헬퍼에 맞춰서:
-            # 예: text + optional refs -> img
-            img_bytes = _gemini_text2image(prompt, images)          # JPEG 생성 가정
+            img_bytes = _gemini_text2image(prompt, images)
             media_type = "image/jpeg"
 
         # ----- 갈테야 밈 (JPEG) -----
@@ -369,7 +399,7 @@ async def generate_image(
             if not images:
                 raise HTTPException(400, "snow_night requires at least one image")
             styled = _style_prompt_snow_night(prompt)
-            img_bytes = _gemini_img2img(styled, images)             # JPEG 생성 가정
+            img_bytes = _gemini_text2image(styled, images)             # JPEG 생성 가정
             media_type = "image/jpeg"
 
         # ----- 픽셀 아트 스티커 (PNG + transparent) -----
