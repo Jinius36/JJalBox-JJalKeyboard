@@ -118,9 +118,19 @@ def _style_prompt_meme_galteya(prompt: str) -> str:
     """갈테야테야 밈 스타일용 프롬프트 래핑."""
     ...
 
-def _style_prompt_snow_night(prompt: str) -> str:
-    """눈 내리는 밤 일러스트 스타일용 프롬프트 래핑."""
-    ...
+def _style_prompt_snow_night() -> str:
+    return (
+        """I will attach a photo of a person, so please transform the image of that person according to the following description. 
+            Recreate a cinematic image composed of three vertically arranged cuts, featuring a person in a snowy, blue-hour landscape, wearing an oversized black coat and a vibrant cobalt blue knit scarf, holding a small wildflower bouquet.
+The first cut is dimly lit, capturing the person from behind, looking out at a wide, snow-covered plain with distant, dark mountains. The second cut is slightly brighter, showing the person in a mid-shot, gazing upwards by a flowing, snow-banked river with a dense pine forest in the background. The third cut is dimly lit, an extreme close-up focused solely on the person's face and the blue scarf, softly illuminated by a frontal light source, with large, out-of-focus snowflakes in the foreground. Each cut uses a shallow depth of field against the cool blue twilight."""
+    )
+
+def _style_prompt_snow_night_reverse() -> str:
+    return (
+        """Recreate a humorous, subversive meme image composed of three vertically arranged cuts, featuring a snowman in a snowy, blue-hour landscape, wearing an oversized black coat and a vibrant cobalt blue knit scarf, holding a small wildflower bouquet. Instead of snowflakes, numerous tiny, clearly recognizable faces of the person from the attached example images are comically falling from the sky like snow.
+
+The first cut is dimly lit, capturing the snowman from behind, looking out at a wide, snow-covered plain with distant, dark mountains. The second cut is slightly brighter, showing the snowman in a mid-shot, gazing upwards by a flowing, snow-banked river with a dense pine forest in the background. The third cut is dimly lit, an extreme close-up focused solely on the snowman's face and the blue scarf, softly illuminated by a frontal light source, with large, out-of-focus tiny faces of the person falling in the foreground. Each cut uses a shallow depth of field against the cool blue twilight, maintaining the original cinematic quality despite the absurd subject."""
+)
 
 def _style_prompt_pixel_art() -> str:
     return (
@@ -355,7 +365,8 @@ def _gemini_text2image(prompt: str, images: Optional[List[UploadFile]]) -> bytes
 @app.post("/v1/images/generate")
 async def generate_image(
     provider: Provider = Form(...),
-    prompt: str = Form(...),
+    prompt: Optional[str] = Form(None),
+    reverse: bool = Form(False),
     images: Optional[List[UploadFile]] = File(None),
 ):
     """
@@ -400,7 +411,11 @@ async def generate_image(
         elif provider == Provider.SNOW_NIGHT:
             if not images:
                 raise HTTPException(400, "snow_night requires at least one image")
-            styled = _style_prompt_snow_night(prompt)
+            if reverse:
+                styled = _style_prompt_snow_night_reverse()
+            else:
+                styled = _style_prompt_snow_night()            
+                
             img_bytes = _gemini_text2image(styled, images)             # JPEG 생성 가정
             media_type = "image/jpeg"
 
