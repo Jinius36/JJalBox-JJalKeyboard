@@ -17,6 +17,29 @@ from dotenv import load_dotenv
 from PIL import Image, ImageDraw, ImageFont
 import json
 
+# 디버깅
+import logging
+
+logger = logging.getLogger("image_debug")
+logging.basicConfig(level=logging.INFO)
+
+def _debug_log_images(tag: str, images: list[UploadFile] | None):
+    """
+    업로드된 images 리스트 상태를 로그로 찍어보는 디버그 함수.
+    """
+    if not images:
+        logger.info(f"[{tag}] images is None or empty")
+        return
+
+    logger.info(f"[{tag}] images count = {len(images)}")
+    for idx, upload in enumerate(images):
+        logger.info(
+            f"[{tag}] image[{idx}]: "
+            f"filename={upload.filename!r}, "
+            f"content_type={upload.content_type!r}"
+        )
+
+
 # Provider 선택 (프론트 enum과 동일)
 class Provider(str, Enum):
     GPT = "gpt"
@@ -114,6 +137,7 @@ def _style_prompt_ac_style(prompt: str) -> str:
 
 # ---------- 4-1. OpenAI / GPT-Image-1 계열 ----------
 
+# GPT-Image-1 text2image 함수
 def _openai_text2image(prompt: str) -> bytes:
     """
     GPT-Image-1 text -> image
@@ -129,8 +153,6 @@ def _openai_text2image(prompt: str) -> bytes:
     
     client = OpenAI(api_key=OPENAI_API_KEY)
 
-    
-
     resp = client.images.generate(
         prompt=prompt, 
         model=OPENAI_IMAGE_MODEL, 
@@ -141,6 +163,7 @@ def _openai_text2image(prompt: str) -> bytes:
     raw_bytes = base64.b64decode(resp.data[0].b64_json)
     return raw_bytes
 
+# GPT-Image-1 text + reference images 함수
 def _openai_text_with_refs(
     prompt: str,
     images: List[UploadFile],
@@ -174,6 +197,48 @@ def _openai_text_with_refs(
         size="1024x1024",
         prompt = prompt,
         n = 1,
+    )
+
+    raw_bytes = base64.b64decode(resp.data[0].b64_json)
+    return raw_bytes
+
+# GPT-Image-1 스티커 PNG 용 함수
+def _openai_text_with_refs_transparent(
+    prompt: str,
+    images: List[UploadFile],
+) -> bytes:
+    """
+    GPT-Image-1 text + reference images -> image
+    - 업로드된 이미지를 참조로 쓰는 text2image
+    - 투명 배경 PNG 생성용
+    """
+    # 사전 검증
+    if not OPENAI_API_KEY:
+        raise HTTPException(500, "OpenAI API key missing")
+    if not OPENAI_IMAGE_MODEL:
+        raise HTTPException(500, "OPENAI_IMAGE_MODEL is not set")
+    if not images or len(images) == 0:
+        raise HTTPException(400, "No reference images provided")
+    
+    client = OpenAI(api_key=OPENAI_API_KEY)
+
+    # UploadFile → file-like objects 준비
+    file_objs = []
+    for upload in images:
+        raw = upload.file.read()
+        fixed = _png_bytes(raw)
+        bio = io.BytesIO(fixed)
+        bio.name = upload.filename or "ref.png"
+        file_objs.append(bio)
+
+    resp = client.images.edit(
+        model = OPENAI_IMAGE_MODEL,
+        image = file_objs,             # 리스트 of file-like
+        size="1024x1024",
+        prompt = prompt,
+        n = 1,
+        background="transparent",
+        output_format="png",
     )
 
     raw_bytes = base64.b64decode(resp.data[0].b64_json)
@@ -263,69 +328,76 @@ async def generate_image(
     엔트리 포인트:
       1) provider별 동작 정의
       2) 벤더 헬퍼 호출
-      3) bytes -> PNG로 변환 후 StreamingResponse 반환
+      3) provider별로 JPEG/PNG로 바로 응답
     """
     try:
-        # 1. provider별 동작 정의
-        #    👉 지금은 GPT-Image-1만 먼저 제대로 붙이고,
-        #       나중에 Gemini / 스타일 프리셋을 채워 넣는 방향으로.
+        # ---------------------------------
+        # 1. provider별로 img_bytes + media_type 결정
+        # ---------------------------------
 
-        # ----- 기본 GPT provider -----
+        # ----- 기본 GPT provider (JPEG) -----
         if provider == Provider.GPT:
-            img_bytes = _openai_text2image(prompt)
-            return StreamingResponse(io.BytesIO(img_bytes), media_type="image/jpeg")
+            if not images:
+                logger.info("[generate_image] GPT text2image (no refs)")
+                img_bytes = _openai_text2image(prompt)              # JPEG 생성 가정
+            else:
+                logger.info(f"[generate_image] GPT text2image with refs (count={len(images)})")
+                img_bytes = _openai_text_with_refs(prompt, images)  # JPEG 생성 가정
+            media_type = "image/jpeg"
 
         
-        # ----- 기본 Gemini provider -----
+        # ----- 기본 Gemini provider (JPEG) -----
         elif provider == Provider.GEMINI:
-            if mode == "text2image":
-                img_bytes = _gemini_text2image(prompt, images)
-            else:  # mode == "edit"
-                if not images:
-                    raise HTTPException(400, "edit mode requires at least one image")
-                img_bytes = _gemini_img2img(prompt, images)
+            # 구현 방식은 네가 정한 헬퍼에 맞춰서:
+            # 예: text + optional refs -> img
+            img_bytes = _gemini_text2image(prompt, images)          # JPEG 생성 가정
+            media_type = "image/jpeg"
 
-        # ----- 밈/스타일 provider들 (나중에 구현) -----
+        # ----- 갈테야 밈 (JPEG) -----
         elif provider == Provider.MEME_GALTEYA:
-            # 1) 스타일 프롬프트 적용
-            # 2) GPT provider 플로우를 재사용
             styled = _style_prompt_meme_galteya(prompt)
-            # 여기서는 GPT text2image와 동일하게 동작시키거나,
-            # 나중에 템플릿/인페인팅으로 변경 가능
-            if mode == "text2image":
-                if not images:
-                    img_bytes = _openai_text2image(styled)
-                else:
-                    img_bytes = _openai_text_with_refs(styled, images)
+            if not images:
+                logger.info("[generate_image] MEME_GALTEYA text2image (no refs)")
+                img_bytes = _openai_text2image(styled)              # JPEG
             else:
-                if not images:
-                    raise HTTPException(400, "edit mode requires at least one image")
-                base_image = images[0]
-                img_bytes = _openai_img_edit(styled, base_image)
+                logger.info(f"[generate_image] MEME_GALTEYA with refs (count={len(images)})")
+                img_bytes = _openai_text_with_refs(styled, images)  # JPEG
+            media_type = "image/jpeg"
 
+        # ----- 눈 내리는 밤 (Gemini img2img, JPEG) -----
         elif provider == Provider.SNOW_NIGHT:
-            # Gemini image -> image 전용으로 설계
             if not images:
                 raise HTTPException(400, "snow_night requires at least one image")
             styled = _style_prompt_snow_night(prompt)
-            img_bytes = _gemini_img2img(styled, images)
+            img_bytes = _gemini_img2img(styled, images)             # JPEG 생성 가정
+            media_type = "image/jpeg"
 
+        # ----- 픽셀 아트 스티커 (PNG + transparent) -----
         elif provider == Provider.PIXEL_ART:
-            # GPT image -> image (참조 이미지 필수)
             if not images:
                 raise HTTPException(400, "pixel_art requires at least one image")
             styled = _style_prompt_pixel_art(prompt)
-            img_bytes = _openai_text_with_refs(styled, images)
+            img_bytes = _openai_text_with_refs_transparent(styled, images)      # PNG + 투명 배경 생성
+            media_type = "image/png"
 
+        # ----- 동물의 숲 스타일 스티커 (PNG + transparent) -----
         elif provider == Provider.AC_STYLE:
-            # GPT image -> image (참조 이미지 필수)
             if not images:
                 raise HTTPException(400, "ac_style requires at least one image")
             styled = _style_prompt_ac_style(prompt)
-            img_bytes = _openai_text_with_refs(styled, images)
+            img_bytes = _openai_text_with_refs_transparent(styled, images)      # PNG + 투명 배경 생성
+            media_type = "image/png"
 
         else:
             raise HTTPException(400, "unsupported provider")
+        
+
+        # ---------------------------------
+        # 2. 최종 응답
+        #    - JPEG 계열은 헬퍼에서 이미 JPEG로 만들어준다
+        #    - PNG 계열은 헬퍼에서 투명 배경 PNG로 만들어준다
+        # ---------------------------------
+        return StreamingResponse(io.BytesIO(img_bytes), media_type=media_type)
         
     except HTTPException:
         raise

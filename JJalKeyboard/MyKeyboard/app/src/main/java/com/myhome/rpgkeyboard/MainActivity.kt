@@ -282,13 +282,32 @@ class MainActivity : AppCompatActivity() {
             .addFormDataPart("prompt", prompt)
 
         // 여러 이미지 첨부: 서버는 images: List<UploadFile>로 받음
-        for ((index, uri) in imageUris.withIndex()) {
-            val mime = contentResolver.getType(uri) ?: "application/octet-stream"
-            val bytes = readAllBytes(uri) ?: throw RuntimeException("이미지 읽기 실패")
+        if (imageUris.isNotEmpty()) {
+            for ((index, uri) in imageUris.withIndex()) {
 
-            val filename = "input_$index"  // 확장자 없어도 됨 (서버에서 처리)
-            val rb = bytes.toRequestBody(mime.toMediaTypeOrNull())
-            builder.addFormDataPart("images", filename, rb)
+                val mime = contentResolver.getType(uri)
+                val bytes = readAllBytes(uri) ?: throw RuntimeException("이미지 읽기 실패")
+
+                // MIME이 없거나, 지원 포맷이 아니면 PNG로 강제 변환
+                val (finalBytes, finalMime, filename) =
+                    if (mime == null || !(mime == "image/png" || mime == "image/jpeg" || mime == "image/webp")) {
+                        // 안전하게 PNG 변환
+                        val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                        val bos = ByteArrayOutputStream()
+                        bmp.compress(Bitmap.CompressFormat.PNG, 100, bos)
+                        Triple(bos.toByteArray(), "image/png", "input_$index.png")
+                    } else {
+                        val ext = when (mime) {
+                            "image/jpeg" -> "jpg"
+                            "image/webp" -> "webp"
+                            else -> "png"
+                        }
+                        Triple(bytes, mime, "input_$index.$ext")
+                    }
+
+                val rb = finalBytes.toRequestBody(finalMime.toMediaTypeOrNull())
+                builder.addFormDataPart("images", filename, rb)
+            }
         }
 
         val request = Request.Builder()
@@ -304,6 +323,7 @@ class MainActivity : AppCompatActivity() {
             return resp.body?.bytes()
         }
     }
+
 
 
     private fun readAllBytes(uri: Uri): ByteArray? =
