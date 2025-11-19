@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from PIL import ImageDraw, ImageFont
 import json
 from io import BytesIO
+from typing import Optional, List, Any
 
 load_dotenv(os.getenv("ENV_PATH"))
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
@@ -53,63 +54,86 @@ def generate_image(
     mode: str = Form(...),               # "text2image" | "edit"
     prompt: str = Form(...),
     size: str = Form("1024x1024"),
-    image: Optional[UploadFile] = File(None),
+    images: Optional[List[UploadFile]] = File(None),  # ★ 변경
 ):
     try:
         if provider not in ("gpt", "gemini"):
             raise HTTPException(400, "provider must be 'gpt' or 'gemini'")
         if mode not in ("text2image", "edit"):
             raise HTTPException(400, "mode must be 'text2image' or 'edit'")
-        if mode == "edit" and image is None:
-            raise HTTPException(400, "image is required for edit mode")
+
+        # edit 모드에서는 최소 1개 필요 (기존 호환성 유지)
+        if mode == "edit" and (not images or len(images) == 0):
+            raise HTTPException(400, "at least one image is required for edit mode")
 
         if provider == "gpt":
-            return _handle_gpt(mode, prompt, size, image)
+            return _handle_gpt(mode, prompt, size, images)
         else:
-            return _handle_gemini(mode, prompt, size, image)
+            return _handle_gemini(mode, prompt, size, images)
 
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-def _handle_gpt(mode: str, prompt: str, size: str, image: Optional[UploadFile]):
+def _normalize_upload_image(upload: UploadFile):
+    img_bytes = upload.file.read()
+    mime = (upload.content_type or "").lower()
+    if mime not in ("image/jpeg", "image/png", "image/webp"):
+        # PNG로 변환
+        im = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
+        buf = io.BytesIO()
+        im.save(buf, format="PNG")
+        img_bytes = buf.getvalue()
+        mime = "image/png"
+        filename = "input.png"
+    else:
+        ext = ".jpg" if mime == "image/jpeg" else ".png" if mime == "image/png" else ".webp"
+        filename = f"input{ext}"
+    return img_bytes, mime, filename
+
+def _handle_gpt(mode: str, prompt: str, size: str, images: Optional[List[UploadFile]]):
     headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
     if not OPENAI_API_KEY:
         raise HTTPException(500, "OpenAI key missing")
 
     if mode == "text2image":
-        url = f"{OPENAI_BASE}/images/generations"
-        payload = {"model": OPENAI_IMAGE_MODEL, "prompt": prompt, "size": size}
-        r = requests.post(url, json=payload, headers=headers, timeout=90)
+        # 1) 이미지가 없으면: 기존 JSON 기반 text2image
+        if not images:
+            url = f"{OPENAI_BASE}/images/generations"
+            payload = {"model": OPENAI_IMAGE_MODEL, "prompt": prompt, "size": size}
+            r = requests.post(url, json=payload, headers=headers, timeout=90)
+
+        # 2) 이미지가 있으면: "텍스트 + 참고 이미지들" (image reference)
+        else:
+            url = f"{OPENAI_BASE}/images/generations"
+            files = [
+                ("model", (None, OPENAI_IMAGE_MODEL)),
+                ("prompt", (None, prompt)),
+                ("size", (None, size)),
+            ]
+            for upload in images:
+                img_bytes, mime, filename = _normalize_upload_image(upload)
+                # 공식 문서는 image[] 형식으로 예시 (참고 링크 기준)
+                files.append(("image[]", (filename, img_bytes, mime)))
+
+            r = requests.post(url, files=files, headers=headers, timeout=90)
+
     else:
+        # 기존 edit 로직 유지, 첫 번째 이미지만 base로 사용
+        if not images:
+            raise HTTPException(400, "image is required for edit mode")
+
+        base_upload = images[0]
+        img_bytes, mime, filename = _normalize_upload_image(base_upload)
+
         url = f"{OPENAI_BASE}/images/edits"
-        # OpenAI 편집은 multipart 필요 + MIME 교정 (jpeg/png/webp 이외는 PNG로 변환)
         files = {
             "model": (None, OPENAI_IMAGE_MODEL),
             "prompt": (None, prompt),
             "size": (None, size),
+            "image": (filename, img_bytes, mime),
         }
-
-        img_bytes = image.file.read()
-        mime = (image.content_type or "").lower()
-        if mime not in ("image/jpeg", "image/png", "image/webp"):
-            # MIME이 허용되지 않으면 PNG로 변환
-            try:
-                im = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
-                buf = io.BytesIO()
-                im.save(buf, format="PNG")
-                img_bytes = buf.getvalue()
-                mime = "image/png"
-                filename = "input.png"
-            except Exception as e:
-                raise HTTPException(400, f"Unsupported image type and failed to convert to PNG: {e}")
-        else:
-            # 적절한 확장자 부여
-            ext = ".jpg" if mime == "image/jpeg" else ".png" if mime == "image/png" else ".webp"
-            filename = f"input{ext}"
-
-        files["image"] = (filename, img_bytes, mime)
         r = requests.post(url, files=files, headers=headers, timeout=90)
 
     if r.status_code // 100 != 2:
@@ -131,27 +155,48 @@ def _handle_gpt(mode: str, prompt: str, size: str, image: Optional[UploadFile]):
 
     return StreamingResponse(io.BytesIO(png), media_type="image/png")
 
-def _handle_gemini(mode: str, prompt: str, size: str, image: Optional[UploadFile]):
+def _handle_gemini(mode: str, prompt: str, size: str, images: Optional[List[UploadFile]]):
     if not GEMINI_API_KEY:
         raise HTTPException(500, "Gemini key missing")
 
     url = f"{GEMINI_BASE}/models/{GEMINI_IMAGE_MODEL}:generateContent"
     headers = {"x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json"}
 
+    parts: list[dict[str, Any]] = []
+    parts.append({"text": prompt})
+
     if mode == "text2image":
+        # 여러 이미지를 "참조"로 넣기
+        if images:
+            for upload in images:
+                img_b = upload.file.read()
+                b64 = base64.b64encode(img_b).decode("utf-8")
+                parts.append({
+                    "inlineData": {
+                        "mimeType": "image/png",   # 필요하면 MIME 추론해서 넣어도 됨
+                        "data": b64
+                    }
+                })
         body = {
-            "contents": [{"parts": [{"text": prompt}]}]
+            "contents": [{"parts": parts}],
+            # 보통 이미지 생성용으로는 response_mime_type도 설정하는 게 권장
+            # "generationConfig": {"response_mime_type": "image/png"}
         }
-    else:
-        img_b = image.file.read()
+
+    else:  # edit 모드 (기존 호환)
+        if not images:
+            raise HTTPException(400, "image is required for edit mode")
+        img_b = images[0].file.read()
         b64 = base64.b64encode(img_b).decode("utf-8")
+        parts.append({
+            "inlineData": {
+                "mimeType": "image/png",
+                "data": b64
+            }
+        })
         body = {
-            "contents": [{
-                "parts": [
-                    {"text": prompt},
-                    {"inlineData": {"mimeType": "image/png", "data": b64}}
-                ]
-            }]
+            "contents": [{"parts": parts}],
+            # "generationConfig": {"response_mime_type": "image/png"}
         }
 
     r = requests.post(url, json=body, headers=headers, timeout=90)
