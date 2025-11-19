@@ -1,5 +1,6 @@
 package com.myhome.rpgkeyboard
 
+import android.annotation.SuppressLint
 import android.content.ContentValues
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -48,7 +49,17 @@ class MainActivity : AppCompatActivity() {
     private lateinit var rvThumbs: RecyclerView // 썸네일 미리보기
 
     // ====== 상태 ======
-    private enum class Provider { GPT, GEMINI }
+    enum class Provider(val displayName: String, val apiName: String) {
+        GPT("GPT", "gpt"),
+        GEMINI("Gemini", "gemini"),
+        MEME_GALTEYA("갈테야테야 밈", "meme_galteya"),
+        SNOW_NIGHT("눈 내리는 밤", "snow_night"),
+        PIXEL_ART("픽셀 아트 캐릭터", "pixel_art"),
+        ANIMAL_CROSSING("동물의 숲 캐릭터", "ac_style");
+    }
+
+
+
     private var currentProvider: Provider = Provider.GPT
 
 
@@ -70,6 +81,7 @@ class MainActivity : AppCompatActivity() {
             .build()
     }
 
+    @SuppressLint("SetTextI18n")
     private val pickImage =
         registerForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris: List<Uri>? ->
             selectedImageUris.clear()
@@ -116,16 +128,19 @@ class MainActivity : AppCompatActivity() {
         btnDownload = findViewById(R.id.btnDownload)
         rvThumbs = findViewById(R.id.rvThumbs)                  // 썸네일 미리보기
 
-        // 드롭다운 어댑터 설정 ("GPT", "Gemini")
-        val providers = listOf("GPT", "Gemini","갈테야테야 밈","눈 내리는 밤", "픽셀 아트 캐릭터", "동물의 숲 캐릭터")
-        spinnerProvider.adapter =
-            ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, providers)
+        // 드롭다운 어댑터 설정
+        spinnerProvider.adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            Provider.values()      // enum 직접 사용 가능
+        )
+
 
         spinnerProvider.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(
                 parent: AdapterView<*>, view: View?, position: Int, id: Long
             ) {
-                currentProvider = if (position == 0) Provider.GPT else Provider.GEMINI
+                currentProvider = Provider.values()[position]
                 Log.d("IMAGE_PROVIDER", "선택: $currentProvider")
             }
             override fun onNothingSelected(parent: AdapterView<*>) { /* no-op */ }
@@ -222,7 +237,7 @@ class MainActivity : AppCompatActivity() {
 
         ioScope.launch {
             try {
-                val providerStr = if (currentProvider == Provider.GPT) "gpt" else "gemini"
+                val providerStr = currentProvider.apiName
                 val hasImages = imageUris.isNotEmpty()
                 val mode = "text2image"   // 이제 항상 text2image로 두고, hasImages는 서버가 해석
 

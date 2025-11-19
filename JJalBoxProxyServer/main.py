@@ -1,5 +1,16 @@
 # main.py
 # 실행: uvicorn main:app --host 0.0.0.0 --port 8000
+
+# enum 정의
+from enum import Enum
+class Provider(str, Enum):
+    GPT = "gpt"
+    GEMINI = "gemini"
+    MEME_GALTEYA = "meme_galteya"
+    SNOW_NIGHT = "snow_night"
+    PIXEL_ART = "pixel_art"
+    AC_STYLE = "ac_style"
+
 import os, base64, io, time
 from typing import Optional
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
@@ -48,17 +59,53 @@ def _http_err(resp: requests.Response):
         detail = f"status={resp.status_code}"
     raise HTTPException(status_code=resp.status_code, detail=detail)
 
+# ===========================
+# 스타일 프롬프트 헬퍼
+# ===========================
+def _style_prompt_meme_galteya(prompt: str) -> str:
+    return (
+        "‘갈테야테야’ 밈 스타일의 한국 인터넷 짤 이미지를 만들어줘. "
+        "과장된 표정과 상황, 대사를 넣을 수 있는 여백이 있는 구성으로, "
+        "카카오톡/메신저에서 공유하기 좋은 정사각형 밈 느낌으로. "
+        f"사용자 설명: {prompt}"
+    )
+
+def _style_prompt_snow_night(prompt: str) -> str:
+    return (
+        "눈 내리는 겨울밤의 감성적인 일러스트 스타일로, "
+        "따뜻한 조명과 눈발, 파란 밤하늘과 조용한 거리 분위기를 강조해서 표현해줘. "
+        f"사용자 설명: {prompt}"
+    )
+
+def _style_prompt_pixel_art(prompt: str) -> str:
+    return (
+        "레트로 16비트 게임 느낌의 픽셀 아트 스타일로, "
+        "도트 단위가 뚜렷하게 보이고, 단순한 형태와 제한된 색상 팔레트를 사용하는 이미지로 만들어줘. "
+        f"사용자 설명: {prompt}"
+    )
+
+def _style_prompt_ac_style(prompt: str) -> str:
+    return (
+        "‘동물의 숲’을 연상시키는 아기자기한 카툰풍 스타일로, "
+        "둥글고 귀여운 비율과 파스텔톤 색감, 부드러운 그림자를 가진 장면으로 만들어줘. "
+        f"사용자 설명: {prompt}"
+    )
+
+# ===========================
+# 이미지 생성 엔드포인트
+# ===========================
+
 @app.post("/v1/images/generate")
-def generate_image(
-    provider: str = Form(...),           # "gpt" | "gemini"
+async def generate_image(
+    provider: Provider = Form(...),
     mode: str = Form(...),               # "text2image" | "edit"
     prompt: str = Form(...),
     size: str = Form("1024x1024"),
-    images: Optional[List[UploadFile]] = File(None),  # ★ 변경
+    images: Optional[List[UploadFile]] = File(None),
 ):
     try:
-        if provider not in ("gpt", "gemini"):
-            raise HTTPException(400, "provider must be 'gpt' or 'gemini'")
+        if provider not in Provider.__members__.values():
+            raise HTTPException(400, "unsupported provider")
         if mode not in ("text2image", "edit"):
             raise HTTPException(400, "mode must be 'text2image' or 'edit'")
 
