@@ -52,13 +52,16 @@ class Provider(str, Enum):
     AC_STYLE = "ac_style"
 
 # 환경 변수 로딩
-load_dotenv(os.getenv("ENV_PATH"))
+# load_dotenv(os.getenv("ENV_PATH")) # 로컬용, AWS에서는 콘솔에서 env 값 등록
+load_dotenv() # AWS용
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 OPENAI_BASE = os.getenv("OPENAI_BASE_URL", "")
 GEMINI_BASE = os.getenv("GEMINI_BASE_URL", "")
 OPENAI_IMAGE_MODEL = os.getenv("OPENAI_IMAGE_MODEL", "")
 GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "")
+
+
 
 # FastAPI 앱 및 CORS 설정
 app = FastAPI(title="Image Proxy")
