@@ -152,6 +152,20 @@ class MainActivity : AppCompatActivity() {
                 currentProvider = Provider.values()[position]
 
                 when (currentProvider) {
+                    Provider.GPT -> {
+                        ivGuide.visibility = View.VISIBLE
+                        ivGuide.setImageResource(R.drawable.guide_gpt)
+                        etPrompt.visibility = View.VISIBLE
+                        btnReverse.visibility = View.VISIBLE
+
+                    }
+                    Provider.GEMINI -> {
+                        ivGuide.visibility = View.VISIBLE
+                        ivGuide.setImageResource(R.drawable.guide_gemini)
+                        etPrompt.visibility = View.VISIBLE
+                        btnReverse.visibility = View.VISIBLE
+
+                    }
                     Provider.SNOW_NIGHT -> {
                         ivGuide.visibility = View.VISIBLE
                         ivGuide.setImageResource(R.drawable.guide_snow_night)
@@ -172,7 +186,6 @@ class MainActivity : AppCompatActivity() {
                         etPrompt.visibility = View.GONE
                         btnReverse.visibility = View.GONE
                     }
-
                     else -> {
                         ivGuide.visibility = View.GONE
                         etPrompt.visibility = View.VISIBLE
