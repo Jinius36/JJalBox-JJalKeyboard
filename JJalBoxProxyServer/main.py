@@ -52,13 +52,16 @@ class Provider(str, Enum):
     AC_STYLE = "ac_style"
 
 # 환경 변수 로딩
-load_dotenv(os.getenv("ENV_PATH"))
+# load_dotenv(os.getenv("ENV_PATH")) # 로컬용, AWS에서는 콘솔에서 env 값 등록
+load_dotenv() # AWS용
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 OPENAI_BASE = os.getenv("OPENAI_BASE_URL", "")
 GEMINI_BASE = os.getenv("GEMINI_BASE_URL", "")
 OPENAI_IMAGE_MODEL = os.getenv("OPENAI_IMAGE_MODEL", "")
 GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "")
+
+
 
 # FastAPI 앱 및 CORS 설정
 app = FastAPI(title="Image Proxy")
@@ -138,7 +141,8 @@ def _style_prompt_pixel_art() -> str:
         "Using the hairstyle, outfit, and accessories of the person in the attached image, create a full-body character illustration. "
         "The background should be transparent (PNG), and only the complete character should be included. "
         "The character should be full size and must not be cropped or cut off at the top or bottom (there should be a slight gap). "
-        "Also, white-colored areas in the character (such as eyes, dress, etc.) should not be transparent — they should be filled with actual white color."
+        "Also, white-colored areas in the character (such as eyes, dress, etc.) should not be transparent — they should be filled with actual white color. "
+        "The background must be transparent."
     )
 
 def _style_prompt_ac_style() -> str:
@@ -148,7 +152,8 @@ def _style_prompt_ac_style() -> str:
         "draw an illustration of the person in the attached image, replicating their hairstyle and clothing "
         "accessories. Make the background transparent, and create a warm and lively atmosphere by using "
         "bright sunlight and soft shadows under natural light. The character should look like one that appears "
-        "in an actual Animal Crossing gameplay screen. Make sure the 3D aspect is clearly shown."
+        "in an actual Animal Crossing gameplay screen. Make sure the 3D aspect is clearly shown. "
+        "The background must be transparent."
     )
 
 
@@ -227,46 +232,46 @@ def _openai_text_with_refs(
     return raw_bytes
 
 # GPT-Image-1 스티커 PNG 용 함수
-def _openai_text_with_refs_transparent(
-    prompt: str,
-    images: List[UploadFile],
-) -> bytes:
-    """
-    GPT-Image-1 text + reference images -> image
-    - 업로드된 이미지를 참조로 쓰는 text2image
-    - 투명 배경 PNG 생성용
-    """
-    # 사전 검증
-    if not OPENAI_API_KEY:
-        raise HTTPException(500, "OpenAI API key missing")
-    if not OPENAI_IMAGE_MODEL:
-        raise HTTPException(500, "OPENAI_IMAGE_MODEL is not set")
-    if not images or len(images) == 0:
-        raise HTTPException(400, "No reference images provided")
-    
-    client = OpenAI(api_key=OPENAI_API_KEY)
-
-    # UploadFile → file-like objects 준비
-    file_objs = []
-    for upload in images:
-        raw = upload.file.read()
-        fixed = _png_bytes(raw)
-        bio = io.BytesIO(fixed)
-        bio.name = upload.filename or "ref.png"
-        file_objs.append(bio)
-
-    resp = client.images.edit(
-        model = OPENAI_IMAGE_MODEL,
-        image = file_objs,             # 리스트 of file-like
-        size="1024x1024",
-        prompt = prompt,
-        n = 1,
-        background="transparent",
-        output_format="png",
-    )
-
-    raw_bytes = base64.b64decode(resp.data[0].b64_json)
-    return raw_bytes
+# def _openai_text_with_refs_transparent(
+#     prompt: str,
+#     images: List[UploadFile],
+# ) -> bytes:
+#     """
+#     GPT-Image-1 text + reference images -> image
+#     - 업로드된 이미지를 참조로 쓰는 text2image
+#     - 투명 배경 PNG 생성용
+#     """
+#     # 사전 검증
+#     if not OPENAI_API_KEY:
+#         raise HTTPException(500, "OpenAI API key missing")
+#     if not OPENAI_IMAGE_MODEL:
+#         raise HTTPException(500, "OPENAI_IMAGE_MODEL is not set")
+#     if not images or len(images) == 0:
+#         raise HTTPException(400, "No reference images provided")
+#
+#     client = OpenAI(api_key=OPENAI_API_KEY)
+#
+#     # UploadFile → file-like objects 준비
+#     file_objs = []
+#     for upload in images:
+#         raw = upload.file.read()
+#         fixed = _png_bytes(raw)
+#         bio = io.BytesIO(fixed)
+#         bio.name = upload.filename or "ref.png"
+#         file_objs.append(bio)
+#
+#     resp = client.images.edit(
+#         model = OPENAI_IMAGE_MODEL,
+#         image = file_objs,             # 리스트 of file-like
+#         size="1024x1024",
+#         prompt = prompt,
+#         n = 1,
+#         background="transparent",
+#         output_format="png",
+#     )
+#
+#     raw_bytes = base64.b64decode(resp.data[0].b64_json)
+#     return raw_bytes
 
 def _openai_img_edit(
     prompt: str,
@@ -424,7 +429,7 @@ async def generate_image(
             if not images:
                 raise HTTPException(400, "pixel_art requires at least one image")
             styled = _style_prompt_pixel_art()
-            img_bytes = _openai_text_with_refs_transparent(styled, images)      # PNG + 투명 배경 생성
+            img_bytes = _gemini_text2image(styled, images)       # PNG + 투명 배경 생성
             media_type = "image/png"
 
         # ----- 동물의 숲 스타일 스티커 (PNG + transparent) -----
@@ -432,7 +437,7 @@ async def generate_image(
             if not images:
                 raise HTTPException(400, "ac_style requires at least one image")
             styled = _style_prompt_ac_style()
-            img_bytes = _openai_text_with_refs_transparent(styled, images)      # PNG + 투명 배경 생성
+            img_bytes = _gemini_text2image(styled, images)       # PNG + 투명 배경 생성
             media_type = "image/png"
 
         else:
