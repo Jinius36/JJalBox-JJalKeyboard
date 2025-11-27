@@ -52,7 +52,7 @@ class MainActivity : AppCompatActivity() {
     // ====== 상태 ======
     enum class Provider(val displayName: String, val apiName: String) {
         GPT("GPT", "gpt"), GEMINI("Gemini", "gemini"),
-        MEME_GALTEYA("갈테야테야~", "meme_galteya"),
+//        MEME_GALTEYA("갈테야테야~", "meme_galteya"),
         SNOW_NIGHT("눈 내리는 밤", "snow_night"),
         PIXEL_ART("픽셀 캐릭터 만들기", "pixel_art"),
         ANIMAL_CROSSING("동물의 숲 캐릭터 만들기", "ac_style");
@@ -176,7 +176,7 @@ class MainActivity : AppCompatActivity() {
                     else -> {
                         ivGuide.visibility = View.GONE
                         etPrompt.visibility = View.VISIBLE
-                        btnReverse.visibility = View.GONE
+                        btnReverse.visibility = View.VISIBLE
                     }
                 }
             }
@@ -334,7 +334,7 @@ class MainActivity : AppCompatActivity() {
         resultImageBytes = null
         ivResult.setImageDrawable(null)
 
-        val reverse = (currentProvider == Provider.SNOW_NIGHT) && btnReverse.isSelected     // 역발상 여부
+        val reverse = (currentProvider == Provider.GPT || currentProvider == Provider.GEMINI || currentProvider == Provider.SNOW_NIGHT) && btnReverse.isSelected     // 역발상 여부
 
         ioScope.launch {
             try {
