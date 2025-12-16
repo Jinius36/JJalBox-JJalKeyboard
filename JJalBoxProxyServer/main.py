@@ -156,7 +156,16 @@ def _style_prompt_ac_style() -> str:
         "The background must be transparent."
     )
 
-
+def _reverse() -> str:
+    return (
+        " Remember the previous prompts and generate an image according to the following requirements. "
+        "Generate a paradoxical meme image using methods such as swapping the subject and object in the remembered prompt. "
+        "For example, switch things around like changing \'a dog bites a person\' to "
+        "\'a person bites a dog,\' or \'a person goes to a building\' to \'a building comes to a person.\' "
+        "Do not add new subtitles or sentences in the image. If an image is attached, maintain the original art style;" # 사용자 프롬프트 상에서 언급이 없었으면 자막이나 문장 추가하지 말 것을 명시
+        " if no image is attached, generate an image that fits the Korean meme style."
+    )
+# 사용자 프롬프트 상에서 언급이 없었으면 자막이나 문장 추가하지 말 것을 명시 - 예)Do not add new subtitles or sentences in the image if there was no request in previous prompts.
 
 
 # ==========================================
@@ -232,46 +241,46 @@ def _openai_text_with_refs(
     return raw_bytes
 
 # GPT-Image-1 스티커 PNG 용 함수
-# def _openai_text_with_refs_transparent(
-#     prompt: str,
-#     images: List[UploadFile],
-# ) -> bytes:
-#     """
-#     GPT-Image-1 text + reference images -> image
-#     - 업로드된 이미지를 참조로 쓰는 text2image
-#     - 투명 배경 PNG 생성용
-#     """
-#     # 사전 검증
-#     if not OPENAI_API_KEY:
-#         raise HTTPException(500, "OpenAI API key missing")
-#     if not OPENAI_IMAGE_MODEL:
-#         raise HTTPException(500, "OPENAI_IMAGE_MODEL is not set")
-#     if not images or len(images) == 0:
-#         raise HTTPException(400, "No reference images provided")
-#
-#     client = OpenAI(api_key=OPENAI_API_KEY)
-#
-#     # UploadFile → file-like objects 준비
-#     file_objs = []
-#     for upload in images:
-#         raw = upload.file.read()
-#         fixed = _png_bytes(raw)
-#         bio = io.BytesIO(fixed)
-#         bio.name = upload.filename or "ref.png"
-#         file_objs.append(bio)
-#
-#     resp = client.images.edit(
-#         model = OPENAI_IMAGE_MODEL,
-#         image = file_objs,             # 리스트 of file-like
-#         size="1024x1024",
-#         prompt = prompt,
-#         n = 1,
-#         background="transparent",
-#         output_format="png",
-#     )
-#
-#     raw_bytes = base64.b64decode(resp.data[0].b64_json)
-#     return raw_bytes
+def _openai_text_with_refs_transparent(
+    prompt: str,
+    images: List[UploadFile],
+) -> bytes:
+    """
+    GPT-Image-1 text + reference images -> image
+    - 업로드된 이미지를 참조로 쓰는 text2image
+    - 투명 배경 PNG 생성용
+    """
+    # 사전 검증
+    if not OPENAI_API_KEY:
+        raise HTTPException(500, "OpenAI API key missing")
+    if not OPENAI_IMAGE_MODEL:
+        raise HTTPException(500, "OPENAI_IMAGE_MODEL is not set")
+    if not images or len(images) == 0:
+        raise HTTPException(400, "No reference images provided")
+
+    client = OpenAI(api_key=OPENAI_API_KEY)
+
+    # UploadFile → file-like objects 준비
+    file_objs = []
+    for upload in images:
+        raw = upload.file.read()
+        fixed = _png_bytes(raw)
+        bio = io.BytesIO(fixed)
+        bio.name = upload.filename or "ref.png"
+        file_objs.append(bio)
+
+    resp = client.images.edit(
+        model = OPENAI_IMAGE_MODEL,
+        image = file_objs,             # 리스트 of file-like
+        size="1024x1024",
+        prompt = prompt,
+        n = 1,
+        background="transparent",
+        output_format="png",
+    )
+
+    raw_bytes = base64.b64decode(resp.data[0].b64_json)
+    return raw_bytes
 
 def _openai_img_edit(
     prompt: str,
@@ -389,15 +398,21 @@ async def generate_image(
         if provider == Provider.GPT:
             if not images:
                 logger.info("[generate_image] GPT text2image (no refs)")
+                if reverse:
+                    prompt = prompt + _reverse()
                 img_bytes = _openai_text2image(prompt)              # JPEG 생성 가정
             else:
                 logger.info(f"[generate_image] GPT text2image with refs (count={len(images)})")
+                if reverse:
+                    prompt = prompt + _reverse()
                 img_bytes = _openai_text_with_refs(prompt, images)  # JPEG 생성 가정
             media_type = "image/jpeg"
 
         
         # ----- 기본 Gemini provider -----
         elif provider == Provider.GEMINI:
+            if reverse:
+                prompt = prompt + _reverse()
             img_bytes = _gemini_text2image(prompt, images)
             media_type = "image/jpeg"
 
@@ -417,7 +432,7 @@ async def generate_image(
             if not images:
                 raise HTTPException(400, "snow_night requires at least one image")
             if reverse:
-                styled = _style_prompt_snow_night_reverse()
+                styled = _style_prompt_snow_night() + _reverse()
             else:
                 styled = _style_prompt_snow_night()            
                 
