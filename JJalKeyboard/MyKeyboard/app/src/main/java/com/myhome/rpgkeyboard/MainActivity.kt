@@ -27,6 +27,13 @@ import com.myhome.rpgkeyboard.BuildConfig
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import android.view.ViewGroup
+// 클립보드 복사를 위한 imports
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import androidx.core.content.FileProvider
+import java.io.File
+import java.io.FileOutputStream
 
 
 class MainActivity : AppCompatActivity() {
@@ -284,8 +291,20 @@ class MainActivity : AppCompatActivity() {
 
         btnDownload.setOnClickListener {
             resultImageBytes?.let { bytes ->
-                val ok = saveToGallery(bytes)
-                val msg = if (ok) "갤러리에 저장되었습니다." else "저장 실패"
+                // 1. 갤러리 저장 실행
+                val isSaved = saveToGallery(bytes)
+
+                // 2. 클립보드 복사 실행
+                val isCopied = copyImageToClipboard(bytes)
+
+                // 3. 결과에 따른 메시지 표시
+                val msg = when {
+                    isSaved && isCopied -> "저장 및 복사 완료!"
+                    isSaved -> "갤러리에 저장되었습니다."
+                    isCopied -> "클립보드에 복사되었습니다."
+                    else -> "작업에 실패했습니다."
+                }
+
                 Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
             }
         }
@@ -468,6 +487,44 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             e.printStackTrace()
             false
+        }
+    }
+
+    /**
+     * 이미지를 임시 파일로 저장 후 클립보드에 URI 복사 (성공 시 true 반환)
+     */
+    private fun copyImageToClipboard(bytes: ByteArray): Boolean {
+        return try {
+            // 1. 캐시 디렉토리에 images 폴더 준비
+            val cachePath = File(cacheDir, "images")
+            if (!cachePath.exists()) {
+                cachePath.mkdirs()
+            }
+
+            // 2. 임시 파일 덮어쓰기 (temp_image.png)
+            val newFile = File(cachePath, "temp_image.png")
+            val stream = FileOutputStream(newFile)
+            stream.write(bytes)
+            stream.close()
+
+            // 3. FileProvider로 URI 생성
+            val contentUri: Uri = FileProvider.getUriForFile(
+                this,
+                "com.myhome.rpgkeyboard.fileprovider",
+                newFile
+            )
+
+            // 4. 클립보드 전송
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clip = ClipData.newUri(contentResolver, "AI Generated Image", contentUri)
+            clipboard.setPrimaryClip(clip)
+
+            true // 성공
+
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Log.e("COPY_ERR", "클립보드 복사 실패: ${e.message}")
+            false // 실패
         }
     }
 
