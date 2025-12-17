@@ -510,7 +510,7 @@ class MainActivity : AppCompatActivity() {
             // 3. FileProvider로 URI 생성
             val contentUri: Uri = FileProvider.getUriForFile(
                 this,
-                "com.myhome.rpgkeyboard.JJalBox.fileprovider",
+                "com.myhome.rpgkeyboard.fileprovider",
                 newFile
             )
 
